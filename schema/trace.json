@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/phamdat721101/nim-skill/schema/trace.json",
+  "title": "TraceRecord",
+  "type": "object",
+  "required": ["skill", "traceId", "startedAt", "durationMs", "status"],
+  "properties": {
+    "skill": { "type": "string" },
+    "traceId": { "type": "string" },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "durationMs": { "type": "number", "minimum": 0 },
+    "tokensIn": { "type": "number" },
+    "tokensOut": { "type": "number" },
+    "costEstimate": { "type": "number" },
+    "verifyPassed": { "type": "boolean" },
+    "healCount": { "type": "integer" },
+    "errorClass": { "enum": ["transient", "permanent", "critical"] },
+    "status": { "enum": ["success", "error", "denied"] }
+  },
+  "additionalProperties": false
+}

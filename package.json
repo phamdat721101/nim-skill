@@ -1,0 +1,52 @@
+{
+  "name": "nim-skill",
+  "version": "0.1.0",
+  "description": "Open, local-first, host-portable agent-harness toolkit. runHarnessed() + reliability primitives (guard, error-handler, monitor, enforcer) as drop-in skills. Enforce, don't instruct.",
+  "keywords": ["agent", "skill", "harness", "reliability", "guardrails", "observability", "output-enforcer", "mcp", "claude-skill", "local-first"],
+  "homepage": "https://github.com/phamdat721101/nim-skill",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/phamdat721101/nim-skill.git"
+  },
+  "bugs": {
+    "url": "https://github.com/phamdat721101/nim-skill/issues"
+  },
+  "license": "MIT",
+  "author": "phamdat721101 (PhamDat / @nxNim9)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "nim-skill": "./dist/cli.js"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./skills/*": "./skills/*",
+    "./schema/*": "./schema/*"
+  },
+  "files": ["dist", "skills", "schema", "SKILL.md", "README.md", "LICENSE", "clawhub.toml", ".anthropic-skills.yaml"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/cli.ts",
+    "test": "vitest run",
+    "test:e2e": "vitest run tests/e2e",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "prepare": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "commander": "^13.0.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@vitest/coverage-v8": "^2.1.8",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

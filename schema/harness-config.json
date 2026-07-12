@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/phamdat721101/nim-skill/schema/harness-config.json",
+  "title": "nim.json harness config",
+  "type": "object",
+  "properties": {
+    "harness": {
+      "type": "object",
+      "properties": {
+        "guard": {
+          "oneOf": [
+            { "const": false },
+            {
+              "type": "object",
+              "properties": {
+                "maxCostUsd": { "type": "number", "minimum": 0 },
+                "ratePerMin": { "type": "integer", "minimum": 1 },
+                "allowTools": { "type": "array", "items": { "type": "string" } },
+                "injection": { "enum": ["off", "strict"] }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "errorHandler": {
+          "oneOf": [
+            { "const": false },
+            {
+              "type": "object",
+              "properties": {
+                "retries": { "type": "integer", "minimum": 0 },
+                "backoff": { "enum": ["exp-jitter", "fixed", "none"] },
+                "baseDelayMs": { "type": "integer", "minimum": 0 },
+                "circuitBreaker": {
+                  "oneOf": [
+                    { "const": false },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "failN": { "type": "integer", "minimum": 1 },
+                        "cooldownMs": { "type": "integer", "minimum": 0 },
+                        "windowSize": { "type": "integer", "minimum": 1 }
+                      },
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "enforcer": {
+          "oneOf": [
+            { "const": false },
+            {
+              "type": "object",
+              "properties": {
+                "strategies": { "type": "array" },
+                "maxHeals": { "type": "integer" },
+                "mode": { "enum": ["strict", "warn", "off"] },
+                "strict": { "type": "boolean" }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "monitor": {
+          "oneOf": [
+            { "const": false },
+            {
+              "type": "object",
+              "properties": {
+                "exporters": {
+                  "type": "array",
+                  "items": { "enum": ["console", "file", "sentry"] }
+                },
+                "traceFile": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

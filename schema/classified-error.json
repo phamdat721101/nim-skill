@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/phamdat721101/nim-skill/schema/classified-error.json",
+  "title": "ClassifiedError",
+  "type": "object",
+  "required": ["class", "message", "retryable", "attempts"],
+  "properties": {
+    "class": { "enum": ["transient", "permanent", "critical"] },
+    "message": { "type": "string" },
+    "cause": {},
+    "retryable": { "type": "boolean" },
+    "attempts": { "type": "integer", "minimum": 0 }
+  },
+  "additionalProperties": false
+}
