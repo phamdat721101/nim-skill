@@ -1,7 +1,7 @@
 # `nim-skill` — the harness your agent runs inside
 
-> **Status: ✅ P1 implemented (reliability trio).** `runHarnessed()` + `nim-guard` + `nim-error-handler` + `nim-monitor` + `nim-enforcer` are built, tested (70 tests, ~94% coverage), and installable. The PRD package lives in `docs/prd/`. P2 (token-saver + search) and P3 (MCP + publish) are follow-ups.
-> **License**: MIT · **Author**: PhamDat / @nxNim9 · **Siblings**: [`goal-skill`](../goal-skill) (missions), HyperMove `/tools` (hosted registry).
+> **Status: ✅ P1 implemented (reliability trio).** `runHarnessed()` + `nim-guard` + `nim-error-handler` + `nim-monitor` + `nim-enforcer` are built, tested (**85 tests, ~94% coverage**), and installable. P2 (`nim-token-saver` + `nim-search`) and P3 (MCP + registry publish) are follow-ups.
+> **License**: MIT · **Author**: PhamDat / @nxNim9 · **Siblings**: `goal-skill` (missions), HyperMove `/tools` (hosted registry).
 
 ## What it is
 
@@ -23,16 +23,38 @@ It works in **any agent host** (Claude Code, Cursor, Kiro, Hermes, OpenClaw, or 
 
 ## The 6 primitives (each = an installable skill + a runtime module)
 
-| Skill | Solves | One line |
+| Skill | Status | One line |
 |---|---|---|
-| **`nim-error-handler`** | error handler | Capture + classify (transient/permanent/critical) → retry-backoff / circuit-breaker / fallback / escalate + feed tracebacks back for self-heal |
-| **`nim-enforcer`** | enforce blind agent | Verify output (schema/test/lint/math/command) **before it ships**; fail → self-heal loop; **unbypassable** (no `--no-verify`) |
-| **`nim-monitor`** | monitor result | Trace every run (tokens/cost/latency/verify/heal) → console/file/Sentry/OTel + local dashboard |
-| **`nim-token-saver`** | saving-token workflow | Route trivial steps to cheap models (DeepSeek via LiteLLM, ~100× cheaper) + compress/budget context (Context-Rot remediation) |
-| **`nim-search`** | semantic search | Goal-framed neural search (~95% token cut) over a pluggable backend: local pgvector, Exa, or keyword — local-first, Exa optional |
-| **`nim-guard`** | safety substrate | Cost cap + rate limit + tool allowlist + agentjacking defense + input validation (Zod) — makes the other five safe |
+| **`nim-guard`** | ✅ P1 | Cost cap + rate limit + tool allowlist + agentjacking defense + input validation (Zod) — the safety substrate that makes the rest safe |
+| **`nim-error-handler`** | ✅ P1 | Capture + classify (transient/permanent/critical) → retry-backoff / circuit-breaker / fallback / escalate + self-heal feedback |
+| **`nim-monitor`** | ✅ P1 | Trace every run (duration/status/verify/heal/error-class) → console / file (JSONL) / opt-in Sentry + local dashboard |
+| **`nim-enforcer`** | ✅ P1 | Verify output (nonempty/json/schema/math/test/lint/command) **before it ships**; fail → bounded self-heal; **unbypassable** |
+| **`nim-token-saver`** | 🔜 P2 | Route trivial steps to cheap models (DeepSeek via LiteLLM) + compress/budget context (Context-Rot remediation) |
+| **`nim-search`** | 🔜 P2 | Goal-framed neural search over a pluggable backend: local pgvector, Exa, or keyword — local-first, Exa optional |
 
 Plus **`nim-harness`** — the `runHarnessed(skill, input, ctx)` core that composes them into one pipeline.
+
+## How it works
+
+```
+runHarnessed(skill, input, ctx):
+  ① guard.validate(input)      Zod + agentjacking → throws GuardError
+  ② guard.checkPolicy(ctx)     cost cap / rate / allowlist → throws GuardError
+  ③ errorHandler.run(          classify → retry / backoff / circuit-breaker / fallback / escalate
+       skill.execute)          ← your logic (the only part you write)
+  ④ enforcer.verifyOrHeal      block-before-ship + bounded self-heal (unbypassable)
+  ⑤ monitor.capture(trace) → return { output, verified, heals, checks, trace }
+```
+
+Every layer is config-gated in `nim.json`; a disabled layer is a byte-identical no-op (rollback contract). Declare only what you want:
+
+```jsonc
+{ "harness": {
+    "guard":        { "maxCostUsd": 0.5, "ratePerMin": 30, "allowTools": ["*"], "injection": "strict" },
+    "errorHandler": { "retries": 3, "backoff": "exp-jitter", "circuitBreaker": { "failN": 5, "cooldownMs": 60000 } },
+    "enforcer":     { "strategies": [{ "kind": "schema", "required": ["id"] }], "maxHeals": 3, "strict": true },
+    "monitor":      { "exporters": ["console", "file"] } } }
+```
 
 ## Install & use (P1 — implemented)
 
@@ -75,13 +97,14 @@ const { output, verified, heals, checks, trace } = await runHarnessed(skill, inp
 
 Host-delegated by default (uses the host's own LLM — **no API keys required**). Keys only for autonomous mode / Exa / DeepSeek / Sentry export.
 
-## Docs (the PRD package)
+## Orientation
 
-- [`docs/prd/00-master-prd.md`](./docs/prd/00-master-prd.md) — context, positioning, Gstack summary, phasing, decisions.
-- [`docs/prd/01-harness-primitives.md`](./docs/prd/01-harness-primitives.md) — the 6 primitives + harness core: contracts + behaviors.
-- [`docs/prd/02-architecture-and-packaging.md`](./docs/prd/02-architecture-and-packaging.md) — `runHarnessed()` runtime, project layout, npm/Skill/MCP/CLI packaging, local-first.
-- [`docs/prd/03-gstack-and-pre-mortem.md`](./docs/prd/03-gstack-and-pre-mortem.md) — Gstack 15-frame + pre-mortem.
-- [`docs/prd/04-tasks-and-roadmap.md`](./docs/prd/04-tasks-and-roadmap.md) — phased task list + acceptance + ship-gates.
+- [`AGENTS.md`](./AGENTS.md) — single-page architecture orientation (read this first if you're an agent working on the repo).
+- [`SKILL.md`](./SKILL.md) — the portable Agent-Skill manifest; per-primitive manifests live in [`skills/`](./skills).
+- [`schema/`](./schema) — JSON schemas for the `nim.json` harness config, trace record, verify result, and classified error.
+- Public API: `import { runHarnessed, createGuard, recover, createMonitor, verifyOrHeal } from 'nim-skill'`.
+
+> The design/PRD package (Gstack analysis, pre-mortem, phased roadmap) is kept as a local-only reference and is not tracked in this repo.
 
 ## Relationship to the rest of the stack
 
