@@ -6,7 +6,7 @@ description: |
   error-recovered (classify → retry/backoff/circuit-breaker/fallback/escalate),
   monitored (traces), and output-verified-before-ship (unbypassable). Composes 4
   installable primitives. Zero network on the default path. MIT.
-version: 0.1.0
+version: 0.3.0
 author: phamdat721101 (PhamDat / @nxNim9)
 license: MIT
 tier: meta
@@ -14,8 +14,9 @@ homepage: https://github.com/phamdat721101/nim-skill
 install: npx github:phamdat721101/nim-skill install
 when_to_use: |
   - Make an agent task reliable: verify output before ship, recover errors, guard inputs.
+  - Cut token cost: context budget, verify/priors cache, provider prompt-caching (45–80% input-cost cut).
   - Add drop-in reliability without rewriting your agent into a framework.
-  - Keywords: harness, verify output, block bad output, retry, circuit breaker, cost cap, agentjacking.
+  - Keywords: harness, verify output, block bad output, retry, circuit breaker, cost cap, agentjacking, context caching, token savings.
 schema:
   harness_config: ./schema/harness-config.json
   trace: ./schema/trace.json
@@ -38,6 +39,8 @@ sub_skills:
   - skills/nim-error-handler
   - skills/nim-monitor
   - skills/nim-enforcer
+  - skills/nim-context
+  - skills/nim-cache
 ---
 
 # nim-skill
@@ -54,11 +57,18 @@ Pipeline (each layer config-gated in `nim.json`; disabled ⇒ byte-identical bar
 ```
 ① guard.validate(input)      Zod + agentjacking → throws GuardError
 ② guard.checkPolicy(ctx)     cost cap / rate / allowlist → throws GuardError
+②b context.budget(est)       per-run token budget (see-verb) → warn/compact/block
 ③ errorHandler.run(          classify → retry/backoff/breaker/fallback/escalate
-     skill.execute)
-④ enforcer.verifyOrHeal      block-before-ship + bounded self-heal (unbypassable)
-⑤ monitor.capture(trace) → return { output, verified, heals, checks, trace }
+     skill.execute)          ctx carries cache/context/memory helpers
+④ enforcer.verifyOrHeal      block-before-ship + bounded self-heal (memory verify-cache short-circuit)
+⑤ monitor.capture(trace) → { output, verified, heals, checks, trace } + token-ROI + cache-ROI
 ```
+
+Token-efficiency layers (v0.2/v0.3, all config-gated, net-token-negative):
+- **context** (see) — per-run token budget + progressive disclosure + lean install.
+- **memory** (remember) — verify-result cache + episodic priors (local JSONL, TTL).
+- **execution** — isolated-context execution (keeps retry/heal noise out of the main window).
+- **cache** — provider-agnostic cache-aware prompt assembly + ROI meter (45–80% input-cost cut; break-even-aware).
 
 ## When to use
 

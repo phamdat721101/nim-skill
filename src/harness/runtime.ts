@@ -4,14 +4,16 @@
  * runHarnessed() — the one function every harnessed run passes through:
  *   ① guard.validate(input)      Zod + agentjacking → throws GuardError
  *   ② guard.checkPolicy(ctx)     cost / rate / allowlist → throws GuardError
+ *   ②b context.budget(est)       per-run token budget (U1) → may throw ContextBudgetError
  *   ③ errorHandler.run(          classify → retry/backoff/breaker/fallback/escalate
- *        skill.execute)          the author's logic
- *   ④ enforcer.verifyOrHeal      block-before-ship + bounded self-heal
- *   ⑤ monitor.capture(trace)     + return { output, verified, heals, checks, trace }
+ *        skill.execute)          the author's logic (ctx carries cache/context/memory helpers)
+ *   ④ enforcer.verifyOrHeal      block-before-ship + bounded self-heal (U4 verify-cache short-circuit)
+ *   ⑤ monitor.capture(trace)     + token-ROI (U3) + cache-ROI (v0.3) → { output, verified, heals, checks, trace }
  *
  * Each layer is config-gated: a disabled layer is a no-op passthrough, so a
  * fully-disabled harness is byte-identical to a bare skill run (rollback
- * contract). A trace is always captured — on deny, on error, and on success.
+ * contract). New v0.2/v0.3 helpers are injected into ctx ONLY when enabled, so
+ * an all-off run leaves ctx and the trace untouched.
  */
 
 import type {
@@ -21,14 +23,25 @@ import type {
   TraceRecord,
   ClassifiedError,
   RunStatus,
+  ErrorClass,
 } from './types.js';
-import { resolveConfig, type ResolvedEnforcer, type ResolvedErrorHandler } from '../config.js';
+import {
+  resolveConfig,
+  type ResolvedEnforcer,
+  type ResolvedErrorHandler,
+  type ResolvedHarnessConfig,
+} from '../config.js';
 import { createGuard } from '../guard/guard.js';
 import { run, createBreaker } from '../error-handler/recover.js';
 import { classify } from '../error-handler/classify.js';
 import { createMonitor } from '../monitor/capture.js';
 import { newTraceId, buildTrace, type TraceFields } from '../monitor/wrap.js';
+import { computeTokenRoi } from '../monitor/roi.js';
 import { verifyOrHeal } from '../enforcer/output-enforcer.js';
+import { createContextHelper } from '../context/index.js';
+import { createMemoryHelper, verifyKey } from '../memory/index.js';
+import { createCacheHelper, computeRoi } from '../cache/index.js';
+import { estimateTokensOf } from '../tokens.js';
 
 type Dict = Record<string, unknown>;
 
@@ -59,13 +72,15 @@ async function execute<O extends Dict>(
   throw new HarnessExecutionError(res.error);
 }
 
+type Enforced<O> = { verified: boolean; heals: number; checks: HarnessResult['checks']; output: O };
+
 async function enforce<O extends Dict>(
   skill: SkillDef<Dict, O>,
   output: O,
   input: Dict,
   ctx: SkillContext,
   enf: ResolvedEnforcer | null,
-): Promise<{ verified: boolean; heals: number; checks: HarnessResult['checks']; output: O }> {
+): Promise<Enforced<O>> {
   if (!enf) return { verified: true, heals: 0, checks: [], output };
   const vr = await verifyOrHeal(output, enf, {
     reExecute: (feedback) => skill.execute(input, { ...ctx, _feedback: feedback }),
@@ -73,10 +88,44 @@ async function enforce<O extends Dict>(
   return { verified: vr.verified, heals: vr.heals, checks: vr.checks, output: vr.output as O };
 }
 
+/** Enforce with the U4 verify-result cache: an unchanged output skips re-verification. */
+async function enforceWithMemory<O extends Dict>(
+  skill: SkillDef<Dict, O>,
+  output: O,
+  input: Dict,
+  ctx: SkillContext,
+  cfg: ResolvedHarnessConfig,
+): Promise<Enforced<O>> {
+  if (!cfg.enforcer || !cfg.memory || !ctx.memory) return enforce(skill, output, input, ctx, cfg.enforcer);
+  const key = verifyKey(output, cfg.enforcer.strategies);
+  if (ctx.memory.getVerify(key) === true) return { verified: true, heals: 0, checks: [], output };
+  const result = await enforce(skill, output, input, ctx, cfg.enforcer);
+  ctx.memory.setVerify(key, result.verified);
+  return result;
+}
+
+/** Build the run ctx, injecting only the helpers whose layer is enabled. */
+function buildRunCtx(ctx: SkillContext, cfg: ResolvedHarnessConfig): {
+  runCtx: SkillContext;
+  getCacheUsage: () => ReturnType<ReturnType<typeof createCacheHelper>['getRecorded']>;
+} {
+  const enabled = cfg.cache || cfg.context || cfg.memory || cfg.execution?.isolate;
+  if (!enabled) return { runCtx: ctx, getCacheUsage: () => null };
+
+  // Isolation (U2): a cloned ctx keeps intermediate/retry state out of the caller's ctx.
+  const runCtx: SkillContext = { ...ctx };
+  const cacheHandle = createCacheHelper(cfg.cache, { baseUrl: ctx.baseUrl as string, model: ctx.model as string });
+  if (cfg.cache) runCtx.cache = cacheHandle.helper;
+  if (cfg.context) runCtx.context = createContextHelper(cfg.context);
+  if (cfg.memory) runCtx.memory = createMemoryHelper(cfg.memory);
+  return { runCtx, getCacheUsage: () => cacheHandle.getRecorded() };
+}
+
 /**
  * Run a skill through the full harness and return a structured envelope.
- * Throws GuardError on a guard breach and HarnessExecutionError on an
- * unrecoverable execution failure — both after capturing a trace.
+ * Throws GuardError / ContextBudgetError on a pre-execution block and
+ * HarnessExecutionError on an unrecoverable execution failure — all after
+ * capturing a trace.
  */
 export async function runHarnessed<O extends Dict = Dict>(
   skill: SkillDef<Dict, O>,
@@ -87,6 +136,14 @@ export async function runHarnessed<O extends Dict = Dict>(
   const monitor = createMonitor(cfg.monitor);
   const traceId = newTraceId();
   const startedAt = Date.now();
+  const { runCtx, getCacheUsage } = buildRunCtx(ctx, cfg);
+
+  const accounting = !!(cfg.monitor?.tokenAccounting || cfg.context);
+  const roiFields = (status: RunStatus, errorClass: ErrorClass | undefined, verified: boolean, heals: number, out: unknown): Partial<TraceFields> => {
+    if (!accounting) return {};
+    const baseline = estimateTokensOf(input) + estimateTokensOf(out);
+    return computeTokenRoi({ status, errorClass, verified, heals, baselineTokens: baseline });
+  };
 
   const emit = (fields: TraceFields): TraceRecord => {
     const trace = buildTrace({ skill: skill.name, traceId, startedAt }, fields);
@@ -94,26 +151,26 @@ export async function runHarnessed<O extends Dict = Dict>(
     return trace;
   };
   const dur = () => Date.now() - startedAt;
-  const denied = (): RunStatus => 'denied';
 
-  // ①② guard — a breach captures a 'denied' trace and rethrows.
+  // ①② guard + ②b context budget — a breach captures a 'denied' trace and rethrows.
   let validated: Dict;
   try {
     const guard = createGuard(cfg.guard);
     validated = guard.validate(input);
     guard.checkPolicy({ agentId: ctx.agentId, tool: skill.name });
+    if (runCtx.context) runCtx.context.budget(estimateTokensOf(validated));
   } catch (err) {
-    emit({ status: denied(), durationMs: dur() });
+    emit({ status: 'denied', durationMs: dur(), ...roiFields('denied', undefined, false, 0, undefined) });
     throw err;
   }
 
   // ③ execute (+ error-handler)
   let output: O;
   try {
-    output = await execute<O>(skill, validated, ctx, cfg.errorHandler);
+    output = await execute<O>(skill, validated, runCtx, cfg.errorHandler);
   } catch (err) {
     const cls = err instanceof HarnessExecutionError ? err.error.class : classify(err).class;
-    const trace = emit({ status: 'error', durationMs: dur(), errorClass: cls });
+    const trace = emit({ status: 'error', durationMs: dur(), errorClass: cls, ...roiFields('error', cls, false, 0, undefined) });
     if (err instanceof HarnessExecutionError) {
       err.trace = trace;
       throw err;
@@ -124,14 +181,28 @@ export async function runHarnessed<O extends Dict = Dict>(
     );
   }
 
-  // ④ enforcer
-  const enforced = await enforce<O>(skill, output, validated, ctx, cfg.enforcer);
+  // ④ enforcer (with U4 verify-cache short-circuit)
+  const enforced = await enforceWithMemory<O>(skill, output, validated, runCtx, cfg);
+
+  // v0.3 cache-ROI: fold the provider usage the skill recorded into the trace.
+  const usage = getCacheUsage();
+  const cacheTrace =
+    cfg.cache && cfg.cache.roi && usage
+      ? computeRoi(usage, {
+          provider: cfg.cache.provider,
+          strategy: cfg.cache.strategy,
+          breakEvenReads: cfg.cache.breakEvenReads,
+          prices: cfg.cache.prices,
+        })
+      : undefined;
 
   // ⑤ success trace + envelope
   const trace = emit({
     status: 'success',
     durationMs: dur(),
     ...(cfg.enforcer ? { verifyPassed: enforced.verified, healCount: enforced.heals } : {}),
+    ...roiFields('success', undefined, enforced.verified, enforced.heals, enforced.output),
+    ...(cacheTrace ? { cache: cacheTrace } : {}),
   });
 
   return {

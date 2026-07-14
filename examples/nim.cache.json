@@ -1,0 +1,13 @@
+{
+  "$schema": "../schema/harness-config.json",
+  "harness": {
+    "guard": { "maxCostUsd": 0.5, "ratePerMin": 30, "allowTools": ["*"], "injection": "strict" },
+    "errorHandler": { "retries": 3, "backoff": "exp-jitter", "circuitBreaker": { "failN": 5, "cooldownMs": 60000 } },
+    "enforcer": { "strategies": [{ "kind": "schema", "required": ["id"] }], "maxHeals": 3, "strict": true, "healFeedback": "minimal" },
+    "monitor": { "exporters": ["console", "file"], "tokenAccounting": true },
+    "context": { "progressive": true, "maxInputTokens": 8000, "onExceed": "warn" },
+    "memory": { "verifyCache": true, "priors": true },
+    "execution": { "isolate": true, "isolateOnRetry": true },
+    "cache": { "provider": "auto", "strategy": "prefix", "ttl": "5m", "roi": true, "breakEvenReads": 2 }
+  }
+}

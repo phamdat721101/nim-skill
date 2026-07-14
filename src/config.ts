@@ -17,6 +17,11 @@ import type {
   ErrorHandlerConfig,
   EnforcerConfig,
   MonitorConfig,
+  ContextConfig,
+  MemoryConfig,
+  ExecutionConfig,
+  CacheConfig,
+  CacheProvider,
   VerifyStrategy,
   EnforceMode,
 } from './harness/types.js';
@@ -65,11 +70,48 @@ const enforcerSchema = z.object({
   maxHeals: z.number().int().optional(),
   mode: z.enum(['strict', 'warn', 'off']).optional(),
   strict: z.boolean().optional(),
+  healFeedback: z.enum(['minimal', 'full']).optional(),
 });
 
 const monitorSchema = z.object({
   exporters: z.array(z.enum(['console', 'file', 'sentry'])).optional(),
   traceFile: z.string().optional(),
+  tokenAccounting: z.boolean().optional(),
+});
+
+const contextSchema = z.object({
+  progressive: z.boolean().optional(),
+  maxInputTokens: z.number().int().positive().optional(),
+  onExceed: z.enum(['compact', 'warn', 'block']).optional(),
+  lean: z.boolean().optional(),
+});
+
+const memorySchema = z.object({
+  verifyCache: z.boolean().optional(),
+  priors: z.boolean().optional(),
+  ttlMs: z.number().int().nonnegative().optional(),
+  store: z.string().optional(),
+});
+
+const executionSchema = z.object({
+  isolate: z.boolean().optional(),
+  isolateOnRetry: z.boolean().optional(),
+});
+
+const cacheProviderSchema = z.enum([
+  'auto', 'anthropic', 'minimax', 'qwen', 'openai', 'glm', 'gemini', 'deepseek',
+]);
+
+const cacheSchema = z.object({
+  provider: cacheProviderSchema.optional(),
+  strategy: z.enum(['prefix', 'explicit']).optional(),
+  ttl: z.enum(['5m', '1h']).optional(),
+  minTokens: z.number().int().positive().optional(),
+  roi: z.boolean().optional(),
+  breakEvenReads: z.number().positive().optional(),
+  prices: z
+    .record(z.object({ base: z.number().nonnegative(), cachedRead: z.number().nonnegative() }))
+    .optional(),
 });
 
 const harnessSchema = z.object({
@@ -77,6 +119,10 @@ const harnessSchema = z.object({
   errorHandler: z.union([errorHandlerSchema, z.literal(false)]).optional(),
   enforcer: z.union([enforcerSchema, z.literal(false)]).optional(),
   monitor: z.union([monitorSchema, z.literal(false)]).optional(),
+  context: z.union([contextSchema, z.literal(false)]).optional(),
+  memory: z.union([memorySchema, z.literal(false)]).optional(),
+  execution: z.union([executionSchema, z.literal(false)]).optional(),
+  cache: z.union([cacheSchema, z.literal(false)]).optional(),
 });
 
 const nimJsonSchema = z.object({ harness: harnessSchema.optional() });
@@ -101,11 +147,42 @@ export interface ResolvedEnforcer {
   strategies: VerifyStrategy[];
   maxHeals: number;
   mode: EnforceMode;
+  healFeedback: 'minimal' | 'full';
 }
 
 export interface ResolvedMonitor {
   exporters: MonitorConfig['exporters'];
   traceFile: string;
+  tokenAccounting: boolean;
+}
+
+export interface ResolvedContext {
+  progressive: boolean;
+  maxInputTokens: number;
+  onExceed: 'compact' | 'warn' | 'block';
+  lean: boolean;
+}
+
+export interface ResolvedMemory {
+  verifyCache: boolean;
+  priors: boolean;
+  ttlMs: number;
+  store: string;
+}
+
+export interface ResolvedExecution {
+  isolate: boolean;
+  isolateOnRetry: boolean;
+}
+
+export interface ResolvedCache {
+  provider: CacheProvider;
+  strategy: 'prefix' | 'explicit';
+  ttl: '5m' | '1h';
+  minTokens: number;
+  roi: boolean;
+  breakEvenReads: number;
+  prices: Record<string, { base: number; cachedRead: number }>;
 }
 
 export interface ResolvedHarnessConfig {
@@ -113,6 +190,10 @@ export interface ResolvedHarnessConfig {
   errorHandler: ResolvedErrorHandler | null;
   enforcer: ResolvedEnforcer | null;
   monitor: ResolvedMonitor | null;
+  context: ResolvedContext | null;
+  memory: ResolvedMemory | null;
+  execution: ResolvedExecution | null;
+  cache: ResolvedCache | null;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────
@@ -159,6 +240,7 @@ function resolveEnforcer(c: EnforcerConfig): ResolvedEnforcer {
     strategies: (c.strategies ?? [{ kind: 'nonempty' }]).map(normalizeStrategy),
     maxHeals: Math.min(Math.max(c.maxHeals ?? 3, 0), 5),
     mode,
+    healFeedback: c.healFeedback ?? 'full',
   };
 }
 
@@ -166,6 +248,48 @@ function resolveMonitor(c: MonitorConfig): ResolvedMonitor {
   return {
     exporters: c.exporters ?? ['console'],
     traceFile: c.traceFile ?? DEFAULT_TRACE_FILE,
+    tokenAccounting: c.tokenAccounting ?? false,
+  };
+}
+
+function resolveContext(c: ContextConfig): ResolvedContext {
+  return {
+    progressive: c.progressive ?? true,
+    maxInputTokens: c.maxInputTokens ?? Infinity,
+    onExceed: c.onExceed ?? 'warn',
+    lean: c.lean ?? false,
+  };
+}
+
+function resolveMemory(c: MemoryConfig): ResolvedMemory {
+  return {
+    verifyCache: c.verifyCache ?? true,
+    priors: c.priors ?? false,
+    ttlMs: c.ttlMs ?? 24 * 60 * 60 * 1000,
+    store: c.store ?? (process.env.NIM_MEMORY_FILE ?? '.nim/memory.jsonl'),
+  };
+}
+
+function resolveExecution(c: ExecutionConfig): ResolvedExecution {
+  return {
+    isolate: c.isolate ?? false,
+    isolateOnRetry: c.isolateOnRetry ?? false,
+  };
+}
+
+/** Provider min-token floors (Qwen/OpenAI 1024, GLM 512, else 1024). */
+const MIN_TOKENS: Partial<Record<CacheProvider, number>> = { glm: 512 };
+
+function resolveCache(c: CacheConfig): ResolvedCache {
+  const provider = c.provider ?? 'auto';
+  return {
+    provider,
+    strategy: c.strategy ?? 'prefix',
+    ttl: c.ttl ?? '5m',
+    minTokens: c.minTokens ?? MIN_TOKENS[provider] ?? 1024,
+    roi: c.roi ?? true,
+    breakEvenReads: c.breakEvenReads ?? 2,
+    prices: c.prices ?? {},
   };
 }
 
@@ -184,6 +308,10 @@ export function resolveConfig(input: HarnessConfig = {}): ResolvedHarnessConfig 
     errorHandler: parsed.errorHandler ? resolveErrorHandler(parsed.errorHandler) : null,
     enforcer: enforcer && enforcer.mode === 'off' ? null : enforcer,
     monitor: parsed.monitor ? resolveMonitor(parsed.monitor) : null,
+    context: parsed.context ? resolveContext(parsed.context) : null,
+    memory: parsed.memory ? resolveMemory(parsed.memory) : null,
+    execution: parsed.execution ? resolveExecution(parsed.execution) : null,
+    cache: parsed.cache ? resolveCache(parsed.cache) : null,
   };
 }
 

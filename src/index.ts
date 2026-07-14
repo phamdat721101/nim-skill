@@ -4,7 +4,7 @@
  * Each primitive is also exported standalone.
  */
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.3.0';
 
 // Core
 export { runHarnessed, HarnessExecutionError } from './harness/runtime.js';
@@ -20,6 +20,10 @@ export {
   type ResolvedErrorHandler,
   type ResolvedEnforcer,
   type ResolvedMonitor,
+  type ResolvedContext,
+  type ResolvedMemory,
+  type ResolvedExecution,
+  type ResolvedCache,
 } from './config.js';
 
 // Guard
@@ -34,7 +38,22 @@ export { CircuitBreaker } from './error-handler/circuit-breaker.js';
 // Monitor
 export { createMonitor, type Monitor, type EventSink } from './monitor/capture.js';
 export { wrap, buildTrace, newTraceId } from './monitor/wrap.js';
-export { renderDashboard, summarize, parseTraces } from './monitor/dashboard.js';
+export {
+  renderDashboard,
+  summarize,
+  summarizeSavings,
+  summarizeCache,
+  parseTraces,
+  type DashboardView,
+} from './monitor/dashboard.js';
+export { computeTokenRoi, type TokenRoi } from './monitor/roi.js';
 
 // Enforcer
 export { verifyOrHeal, defaultCommandRunner, type CommandRunner, type EnforceConfig } from './enforcer/output-enforcer.js';
+
+// v0.2 / v0.3 — see / remember / serialize / cache
+export { estimateTokens, estimateTokensOf } from './tokens.js';
+export { createContextHelper, ContextBudgetError } from './context/index.js';
+export { createMemoryHelper, verifyKey } from './memory/index.js';
+export { toTerminal, assertTerminal, SerializeGuardError, type TerminalFormat } from './serialize/index.js';
+export { createCacheHelper, computeRoi, pickAdapter, parseUsage, type ParsedUsage, type CacheHelperHandle } from './cache/index.js';

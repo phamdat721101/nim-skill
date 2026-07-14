@@ -30,8 +30,13 @@ Pipeline (each layer config-gated; disabled ⇒ byte-identical to a bare run):
 - `src/harness/` — `runHarnessed()` core + shared types.
 - `src/guard/` — validate + injection (agentjacking) + policy (cost/rate/allowlist).
 - `src/error-handler/` — classify + recover (retry/backoff/fallback/escalate) + circuit-breaker.
-- `src/monitor/` — wrap + capture + pluggable sinks (console/file/sentry) + dashboard.
-- `src/enforcer/` — output-enforcer verify-gate (nonempty/schema/math/json/test/lint/command).
+- `src/monitor/` — wrap + capture + pluggable sinks (console/file/sentry) + dashboard + token-ROI (`roi.ts`).
+- `src/enforcer/` — output-enforcer verify-gate (nonempty/schema/math/json/test/lint/command) + compact heal-feedback.
+- `src/context/` — U1 "see" verb: per-run token budget helper (`ctx.context`).
+- `src/memory/` — U4 "remember" verb: content-hash verify-cache + priors (`ctx.memory`).
+- `src/cache/` — v0.3 nim-cache: assembler + provider adapters + ROI meter (`ctx.cache`).
+- `src/serialize/` — U5b terminal-only token-optimized serialization (guardrailed).
+- `src/tokens.ts` — single shared approximate token estimator.
 - `src/config.ts` — Zod-validated `nim.json` loader (`resolveConfig`).
 - `src/cli.ts` — `nim-skill run|enforce|monitor|add`.
 - `skills/nim-*/SKILL.md` — installable skill manifests.

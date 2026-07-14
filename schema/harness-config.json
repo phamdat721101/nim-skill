@@ -59,7 +59,8 @@
                 "strategies": { "type": "array" },
                 "maxHeals": { "type": "integer" },
                 "mode": { "enum": ["strict", "warn", "off"] },
-                "strict": { "type": "boolean" }
+                "strict": { "type": "boolean" },
+                "healFeedback": { "enum": ["minimal", "full"] }
               },
               "additionalProperties": false
             }
@@ -75,7 +76,80 @@
                   "type": "array",
                   "items": { "enum": ["console", "file", "sentry"] }
                 },
-                "traceFile": { "type": "string" }
+                "traceFile": { "type": "string" },
+                "tokenAccounting": { "type": "boolean" }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "context": {
+          "oneOf": [
+            { "const": false },
+            {
+              "type": "object",
+              "properties": {
+                "progressive": { "type": "boolean" },
+                "maxInputTokens": { "type": "integer", "minimum": 1 },
+                "onExceed": { "enum": ["compact", "warn", "block"] },
+                "lean": { "type": "boolean" }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "memory": {
+          "oneOf": [
+            { "const": false },
+            {
+              "type": "object",
+              "properties": {
+                "verifyCache": { "type": "boolean" },
+                "priors": { "type": "boolean" },
+                "ttlMs": { "type": "integer", "minimum": 0 },
+                "store": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "execution": {
+          "oneOf": [
+            { "const": false },
+            {
+              "type": "object",
+              "properties": {
+                "isolate": { "type": "boolean" },
+                "isolateOnRetry": { "type": "boolean" }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "cache": {
+          "oneOf": [
+            { "const": false },
+            {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "enum": ["auto", "anthropic", "minimax", "qwen", "openai", "glm", "gemini", "deepseek"]
+                },
+                "strategy": { "enum": ["prefix", "explicit"] },
+                "ttl": { "enum": ["5m", "1h"] },
+                "minTokens": { "type": "integer", "minimum": 1 },
+                "roi": { "type": "boolean" },
+                "breakEvenReads": { "type": "number", "minimum": 0 },
+                "prices": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "base": { "type": "number", "minimum": 0 },
+                      "cachedRead": { "type": "number", "minimum": 0 }
+                    }
+                  }
+                }
               },
               "additionalProperties": false
             }

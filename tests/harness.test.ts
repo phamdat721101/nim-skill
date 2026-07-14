@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { rmSync } from 'node:fs';
+import { cleanNimArtifacts } from './helpers.js';
 import { runHarnessed, HarnessExecutionError } from '../src/harness/runtime.js';
 import { GuardError } from '../src/guard/guard.js';
 import type { SkillDef, SkillContext, HarnessConfig } from '../src/harness/types.js';
@@ -114,4 +114,4 @@ describe('runHarnessed — full pipeline dogfood', () => {
   });
 });
 
-afterEach(() => rmSync('.nim', { recursive: true, force: true }));
+afterEach(() => cleanNimArtifacts());

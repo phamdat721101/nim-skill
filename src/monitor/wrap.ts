@@ -10,7 +10,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import type { TraceRecord, RunStatus, ErrorClass } from '../harness/types.js';
+import type { TraceRecord, RunStatus, ErrorClass, CacheTrace } from '../harness/types.js';
 import type { Monitor } from './capture.js';
 
 export function newTraceId(): string {
@@ -32,6 +32,10 @@ export interface TraceFields {
   tokensIn?: number;
   tokensOut?: number;
   costEstimate?: number;
+  tokensSavedEstimate?: number;
+  tokensSpentByHarness?: number;
+  netTokens?: number;
+  cache?: CacheTrace;
 }
 
 /** Assemble a TraceRecord from an init + measured fields. */
@@ -48,6 +52,10 @@ export function buildTrace(init: Required<Pick<TraceInit, 'skill' | 'traceId'>> 
     ...(fields.tokensIn !== undefined ? { tokensIn: fields.tokensIn } : {}),
     ...(fields.tokensOut !== undefined ? { tokensOut: fields.tokensOut } : {}),
     ...(fields.costEstimate !== undefined ? { costEstimate: fields.costEstimate } : {}),
+    ...(fields.tokensSavedEstimate !== undefined ? { tokensSavedEstimate: fields.tokensSavedEstimate } : {}),
+    ...(fields.tokensSpentByHarness !== undefined ? { tokensSpentByHarness: fields.tokensSpentByHarness } : {}),
+    ...(fields.netTokens !== undefined ? { netTokens: fields.netTokens } : {}),
+    ...(fields.cache !== undefined ? { cache: fields.cache } : {}),
   };
 }
 

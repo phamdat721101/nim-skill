@@ -6,7 +6,7 @@
  * into a host skills directory (Claude / Kiro / Cursor / custom).
  */
 
-import { cpSync, mkdirSync, existsSync } from 'node:fs';
+import { cpSync, mkdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 /** Package root (dist/.. or src/.. — both resolve to the repo root). */
 export const PKG_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-export const PRIMITIVES = ['nim-guard', 'nim-error-handler', 'nim-monitor', 'nim-enforcer'] as const;
+export const PRIMITIVES = ['nim-guard', 'nim-error-handler', 'nim-monitor', 'nim-enforcer', 'nim-context', 'nim-cache'] as const;
 
 /** The umbrella skill installs as a folder containing the top-level SKILL.md. */
 export const UMBRELLA = 'nim-skill';
@@ -74,15 +74,36 @@ export function sourceOf(name: string, root: string = PKG_ROOT): string {
   return name === UMBRELLA ? join(root, 'SKILL.md') : join(root, 'skills', name);
 }
 
+/**
+ * U1 `--lean`: trim reference sections for hosts without progressive disclosure.
+ * Cuts everything from a `<!-- lean:cut -->` marker onward; otherwise keeps the
+ * frontmatter + everything up to (but not including) the first `## Cross-links`
+ * / `## Reference` heading. The trigger (frontmatter description) is preserved.
+ */
+export function leanFilter(md: string): string {
+  const marker = md.indexOf('\n<!-- lean:cut -->');
+  if (marker !== -1) return md.slice(0, marker).trimEnd() + '\n';
+  const ref = md.search(/\n#{1,6}\s+(Cross-links|Reference)\b/i);
+  return ref !== -1 ? md.slice(0, ref).trimEnd() + '\n' : md;
+}
+
+function applyLean(file: string): void {
+  if (!existsSync(file)) return;
+  writeFileSync(file, leanFilter(readFileSync(file, 'utf8')));
+}
+
 /** Install one skill into `dir`; returns the destination path. */
-export function installSkill(name: string, dir: string, root: string = PKG_ROOT): string {
+export function installSkill(name: string, dir: string, root: string = PKG_ROOT, lean = false): string {
   mkdirSync(dir, { recursive: true });
   const dest = join(dir, name);
   if (name === UMBRELLA) {
     mkdirSync(dest, { recursive: true });
-    cpSync(sourceOf(name, root), join(dest, 'SKILL.md'));
+    const destFile = join(dest, 'SKILL.md');
+    cpSync(sourceOf(name, root), destFile);
+    if (lean) applyLean(destFile);
   } else {
     cpSync(sourceOf(name, root), dest, { recursive: true });
+    if (lean) applyLean(join(dest, 'SKILL.md'));
   }
   return dest;
 }

@@ -85,12 +85,15 @@ program
   .command('monitor')
   .argument('[action]', 'dashboard', 'dashboard')
   .option('--file <path>', 'trace file', '.nim/traces.jsonl')
+  .option('--savings', 'show the U3 net-token savings view')
+  .option('--cache', 'show the v0.3 cache-ROI view')
   .description('Render the local run dashboard from the JSONL trace file.')
-  .action((_action: string, opts: { file: string }) => {
-    process.stdout.write(renderDashboard(opts.file) + '\n');
+  .action((_action: string, opts: { file: string; savings?: boolean; cache?: boolean }) => {
+    const view = opts.savings ? 'savings' : opts.cache ? 'cache' : 'default';
+    process.stdout.write(renderDashboard(opts.file, view) + '\n');
   });
 
-function performInstall(targets: string[], opts: { host?: string; dir?: string }): void {
+function performInstall(targets: string[], opts: { host?: string; dir?: string; lean?: boolean }): void {
   const dirs = resolveTargetDirs(opts.host, opts.dir);
   if (!dirs) {
     process.stderr.write(`nim: unknown host '${opts.host}'. Options: ${Object.keys(HOST_DIRS).join(', ')} (or use --dir)\n`);
@@ -110,7 +113,7 @@ function performInstall(targets: string[], opts: { host?: string; dir?: string }
         process.exitCode = 1;
         return;
       }
-      process.stdout.write(`nim: installed ${name} → ${installSkill(name, dir)}\n`);
+      process.stdout.write(`nim: installed ${name} → ${installSkill(name, dir, undefined, opts.lean)}\n`);
     }
   }
 }
@@ -120,15 +123,17 @@ program
   .argument('[targets...]', `skills to install (default: all): ${PRIMITIVES.join(', ')} | all | nim-skill`)
   .option('--host <host>', 'target host: claude | kiro | cursor')
   .option('--dir <path>', 'explicit host skills directory (overrides --host)')
+  .option('--lean', 'install lean manifests (omit reference sections) for hosts without progressive disclosure')
   .description('Install skill manifests into a host skills directory so any agent can discover them.')
-  .action((targets: string[], opts: { host?: string; dir?: string }) => performInstall(targets, opts));
+  .action((targets: string[], opts: { host?: string; dir?: string; lean?: boolean }) => performInstall(targets, opts));
 
 program
   .command('install')
   .option('--host <host>', 'target host: claude | kiro | cursor')
   .option('--dir <path>', 'explicit host skills directory (overrides --host)')
+  .option('--lean', 'install lean manifests (omit reference sections)')
   .description('Install ALL nim-skill skills into detected agent hosts (zero-config alias of `add all`).')
-  .action((opts: { host?: string; dir?: string }) => performInstall([], opts));
+  .action((opts: { host?: string; dir?: string; lean?: boolean }) => performInstall([], opts));
 
 program.parseAsync(process.argv);
 

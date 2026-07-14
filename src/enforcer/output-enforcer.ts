@@ -120,6 +120,19 @@ export interface EnforceConfig {
   strategies: VerifyStrategy[];
   maxHeals: number;
   mode: EnforceMode;
+  /** 'minimal' feeds back a compact structured diff; 'full' (default) the prose reason dump. */
+  healFeedback?: 'minimal' | 'full';
+}
+
+/** Build self-heal feedback — compact structured (minimal) or prose (full). */
+function buildFeedback(failed: CheckResult[], mode: 'minimal' | 'full'): string {
+  if (mode === 'minimal') {
+    return JSON.stringify({ rejected: failed.map((c) => ({ strategy: c.strategy, reason: c.reason })) });
+  }
+  return `output-enforcer rejected the previous result: ${failed
+    .map((c) => c.reason)
+    .filter(Boolean)
+    .join('; ')}. Fix and return again.`;
 }
 
 /**
@@ -160,10 +173,7 @@ export async function verifyOrHeal(
       return { verified: false, heals, checks, output: current };
     }
 
-    const feedback = `output-enforcer rejected the previous result: ${failed
-      .map((c) => c.reason)
-      .filter(Boolean)
-      .join('; ')}. Fix and return again.`;
+    const feedback = buildFeedback(failed, config.healFeedback ?? 'full');
     current = await opts.reExecute(feedback);
     heals += 1;
   }
