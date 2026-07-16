@@ -35,6 +35,9 @@ Pipeline (each layer config-gated; disabled ⇒ byte-identical to a bare run):
 - `src/context/` — U1 "see" verb: per-run token budget helper (`ctx.context`).
 - `src/memory/` — U4 "remember" verb: content-hash verify-cache + priors (`ctx.memory`).
 - `src/cache/` — v0.3 nim-cache: assembler + provider adapters + ROI meter (`ctx.cache`).
+- `src/baseline/` — v0.4 nim-baseline: memory-file lint rules + scaffold (CLI-only, no `ctx` helper).
+- `src/index-meter/` — v0.4 nim-index: tool-disclosure token/risk-band meter (CLI-only, no `ctx` helper).
+- `src/profile/` — v0.4 nim-profile: model-tier detection + `applyProfile()` config resolver (library-only).
 - `src/serialize/` — U5b terminal-only token-optimized serialization (guardrailed).
 - `src/tokens.ts` — single shared approximate token estimator.
 - `src/config.ts` — Zod-validated `nim.json` loader (`resolveConfig`).

@@ -1,6 +1,6 @@
 # `nim-skill` — the harness your agent runs inside
 
-> **Status: ✅ P1 (reliability trio) + v0.2 token-efficiency + v0.3 `nim-cache` implemented.** `runHarnessed()` + `nim-guard` + `nim-error-handler` + `nim-monitor` + `nim-enforcer` + `nim-context` (see) + `nim-memory-lite` (remember) + isolation + token-ROI + `nim-cache` (provider-agnostic context caching) are built, tested (**117 tests**), and installable. Every new layer is config-gated + byte-identical when off.
+> **Status: ✅ P1 (reliability trio) + v0.2 token-efficiency + v0.3 `nim-cache` + v0.4 baseline/index/profile implemented.** `runHarnessed()` + `nim-guard` + `nim-error-handler` + `nim-monitor` + `nim-enforcer` + `nim-context` (see) + `nim-memory-lite` (remember) + isolation + token-ROI + `nim-cache` (provider-agnostic context caching) + `nim-baseline` (memory-file lint) + `nim-index` (tool-disclosure tax meter) + `nim-profile` (model-tier config resolver) are built, tested (**173 tests**), and installable. Every new layer is config-gated + byte-identical when off.
 > **License**: MIT · **Author**: PhamDat / @nxNim9 · **Siblings**: `goal-skill` (missions), HyperMove `/tools` (hosted registry).
 
 ## What it is
@@ -21,7 +21,7 @@ It works in **any agent host** (Claude Code, Cursor, Kiro, Hermes, OpenClaw, or 
 
 2026 research is consistent: past a capability threshold, **reliability comes from the harness, not the model**. Multi-agent systems **fail 41-86% of the time without error-recovery discipline** (Taskade, 2026); context degrades as it grows (Chroma "Context Rot"); **13% of marketplace agent-skills contain critical vulnerabilities**; the agentjacking attack class is live. Agents without a harness *leak tokens, loop uncontrolled, ship unverified output, and fail silently.* `nim-skill` is the harness — as drop-in skills, not a framework you rewrite your agent into.
 
-## The 6 primitives (each = an installable skill + a runtime module)
+## The 9 primitives (each = an installable skill + a runtime module)
 
 | Skill | Status | One line |
 |---|---|---|
@@ -32,6 +32,9 @@ It works in **any agent host** (Claude Code, Cursor, Kiro, Hermes, OpenClaw, or 
 | **`nim-context`** | ✅ v0.2 | The "see" verb — per-run token budget (warn/compact/block) + progressive disclosure + lean install. Stops the harness being a context tax |
 | **`nim-memory-lite`** | ✅ v0.2 | The "remember" verb — content-hash verify-result cache + episodic priors (local JSONL, TTL); skip re-verifying unchanged work |
 | **`nim-cache`** | ✅ v0.3 | Provider-agnostic context caching — cache-aware prompt assembly (prefix-first) + per-provider directives + ROI meter (45–80% input-cost cut, break-even-aware) |
+| **`nim-baseline`** | ✅ v0.4 | Lint/scaffold/audit an agent memory file (AGENTS.md/CLAUDE.md-family) against the "would removing this line cause a mistake" test + progressive-disclosure structure |
+| **`nim-index`** | ✅ v0.4 | Tool/skill disclosure-tax meter — measures the standing MCP/skill token cost + a cited accuracy-risk band; flags cache-fragile tool descriptions |
+| **`nim-profile`** | ✅ v0.4 | Model-tier detection + per-tier harness config resolution — tightens (never loosens) reliability for models with weaker measured instruction-following |
 | **`nim-token-saver`** | 🔜 next | Route trivial steps to cheap models (DeepSeek via LiteLLM) — the model-routing half not covered by `nim-context` |
 | **`nim-search`** | 🔜 next | Goal-framed neural search over a pluggable backend: local pgvector, Exa, or keyword — local-first, Exa optional |
 

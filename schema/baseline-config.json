@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/phamdat721101/nim-skill/schema/baseline-config.json",
+  "title": "BaselineConfig",
+  "description": "Top-level nim.json 'baseline' block — a sibling of 'harness', not nested under it.",
+  "type": "object",
+  "properties": {
+    "maxLines": { "type": "integer", "minimum": 1, "default": 100 },
+    "blockLines": { "type": "integer", "minimum": 1, "default": 150 },
+    "maxInstructions": { "type": "integer", "minimum": 1, "default": 100 },
+    "mode": { "type": "string", "enum": ["warn", "strict", "off"], "default": "warn" },
+    "detailDir": { "type": "string", "default": "agent_docs" }
+  },
+  "additionalProperties": false
+}

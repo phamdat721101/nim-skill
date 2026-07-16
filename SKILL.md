@@ -6,7 +6,7 @@ description: |
   error-recovered (classify → retry/backoff/circuit-breaker/fallback/escalate),
   monitored (traces), and output-verified-before-ship (unbypassable). Composes 4
   installable primitives. Zero network on the default path. MIT.
-version: 0.3.0
+version: 0.4.0
 author: phamdat721101 (PhamDat / @nxNim9)
 license: MIT
 tier: meta

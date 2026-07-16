@@ -70,6 +70,13 @@ export interface CacheTrace {
   breakEvenOk: boolean;
 }
 
+/** v0.4 nim-index — standing tool-disclosure tax, populated only when nim-index runs. */
+export interface DisclosureTrace {
+  toolCount: number;
+  estimatedTokensPerTurn: number;
+  riskBand: 'low-risk' | 'watch' | 'elevated-risk' | 'high-risk';
+}
+
 export interface TraceRecord {
   skill: string;
   traceId: string;
@@ -88,6 +95,10 @@ export interface TraceRecord {
   netTokens?: number;
   /** v0.3 cache ROI. */
   cache?: CacheTrace;
+  /** v0.4 nim-index disclosure-tax report. */
+  disclosure?: DisclosureTrace;
+  /** v0.4 nim-profile — set by the caller when applyProfile() was used. */
+  profileTier?: 'frontier' | 'open-weight-verified' | 'open-weight-untested';
 }
 
 // ─── Config vocabulary (nim.json → harness) ──────────────────────────────────

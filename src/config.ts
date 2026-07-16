@@ -125,7 +125,54 @@ const harnessSchema = z.object({
   cache: z.union([cacheSchema, z.literal(false)]).optional(),
 });
 
-const nimJsonSchema = z.object({ harness: harnessSchema.optional() });
+/**
+ * `baseline` is a top-level nim.json sibling of `harness`, not nested under
+ * it — linting a memory file is a CI/build-time concern, not a per-call
+ * runHarnessed() concern (see docs/prd/12-final-prd-v04.md §6, P4-04).
+ */
+const baselineSchema = z.object({
+  maxLines: z.number().int().positive().optional(),
+  blockLines: z.number().int().positive().optional(),
+  maxInstructions: z.number().int().positive().optional(),
+  mode: z.enum(['warn', 'strict', 'off']).optional(),
+  detailDir: z.string().optional(),
+});
+
+/**
+ * `profile` is a top-level nim.json sibling of `harness` and `baseline` —
+ * same sibling-key scoping, same reason: it is a config-resolution input,
+ * not a per-call runHarnessed() concern by itself (applyProfile() is called
+ * by the project, not injected as a 6th pipeline step).
+ */
+const profileSchema = z.object({
+  tier: z.enum(['frontier', 'open-weight-verified', 'open-weight-untested']).optional(),
+  modelHint: z.string().optional(),
+  verifiedModelPatterns: z.array(z.string()).optional(),
+});
+
+const nimJsonSchema = z.object({
+  harness: harnessSchema.optional(),
+  baseline: baselineSchema.optional(),
+  profile: profileSchema.optional(),
+});
+
+/** Validate + fill defaults for the `baseline` nim.json block. Never folded into harnessSchema. */
+export function resolveBaselineConfig(input: unknown = {}): {
+  maxLines: number;
+  blockLines: number;
+  maxInstructions: number;
+  mode: 'warn' | 'strict' | 'off';
+  detailDir: string;
+} {
+  const parsed = baselineSchema.parse(input ?? {});
+  return {
+    maxLines: parsed.maxLines ?? 100,
+    blockLines: parsed.blockLines ?? 150,
+    maxInstructions: parsed.maxInstructions ?? 100,
+    mode: parsed.mode ?? 'warn',
+    detailDir: parsed.detailDir ?? 'agent_docs',
+  };
+}
 
 // ─── Resolved (defaults-filled) shapes ───────────────────────────────────
 
@@ -329,4 +376,20 @@ export function loadNimJson(cwd: string = process.cwd()): HarnessConfig {
   if (!existsSync(file)) return {};
   const raw = JSON.parse(readFileSync(file, 'utf8')) as unknown;
   return nimJsonSchema.parse(raw).harness ?? {};
+}
+
+/** Load the `baseline` block from a nim.json in `cwd` (if present). Sibling to loadNimJson, same no-throw-on-missing contract. */
+export function loadBaselineJson(cwd: string = process.cwd()): unknown {
+  const file = resolve(cwd, 'nim.json');
+  if (!existsSync(file)) return {};
+  const raw = JSON.parse(readFileSync(file, 'utf8')) as unknown;
+  return nimJsonSchema.parse(raw).baseline ?? {};
+}
+
+/** Load the `profile` block from a nim.json in `cwd` (if present). Sibling to loadNimJson, same no-throw-on-missing contract. */
+export function loadProfileJson(cwd: string = process.cwd()): unknown {
+  const file = resolve(cwd, 'nim.json');
+  if (!existsSync(file)) return {};
+  const raw = JSON.parse(readFileSync(file, 'utf8')) as unknown;
+  return nimJsonSchema.parse(raw).profile ?? {};
 }

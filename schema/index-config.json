@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/phamdat721101/nim-skill/schema/index-config.json",
+  "title": "IndexConfig",
+  "description": "Top-level nim.json 'index' block — a sibling of 'harness', not nested under it.",
+  "type": "object",
+  "properties": {
+    "estimatedTurnsPerTask": { "type": "integer", "minimum": 1, "default": 5 },
+    "riskThresholds": {
+      "type": "object",
+      "properties": {
+        "watch": { "type": "integer", "minimum": 1, "default": 21 },
+        "elevated": { "type": "integer", "minimum": 1, "default": 26 },
+        "high": { "type": "integer", "minimum": 1, "default": 101 }
+      },
+      "additionalProperties": false
+    },
+    "mcpConfigPath": { "type": "string", "default": ".mcp.json" },
+    "skillsDir": { "type": "string", "default": "skills" }
+  },
+  "additionalProperties": false
+}

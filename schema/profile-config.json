@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/phamdat721101/nim-skill/schema/profile-config.json",
+  "title": "ProfileConfig",
+  "description": "Top-level nim.json 'profile' block — a sibling of 'harness', not nested under it.",
+  "type": "object",
+  "properties": {
+    "tier": { "type": "string", "enum": ["frontier", "open-weight-verified", "open-weight-untested"] },
+    "modelHint": { "type": "string" },
+    "verifiedModelPatterns": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": false
+}
