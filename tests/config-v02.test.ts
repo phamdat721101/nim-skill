@@ -8,14 +8,16 @@ describe('resolveConfig — new v0.2/v0.3 layers', () => {
     expect(r.memory).toBeNull();
     expect(r.execution).toBeNull();
     expect(r.cache).toBeNull();
+    expect(r.lessons).toBeNull();
   });
 
   it('treats explicit false as disabled', () => {
-    const r = resolveConfig({ context: false, memory: false, execution: false, cache: false });
+    const r = resolveConfig({ context: false, memory: false, execution: false, cache: false, lessons: false });
     expect(r.context).toBeNull();
     expect(r.memory).toBeNull();
     expect(r.execution).toBeNull();
     expect(r.cache).toBeNull();
+    expect(r.lessons).toBeNull();
   });
 
   it('fills context defaults', () => {
@@ -36,5 +38,17 @@ describe('resolveConfig — new v0.2/v0.3 layers', () => {
     expect(resolveConfig({ enforcer: { healFeedback: 'minimal' } }).enforcer?.healFeedback).toBe('minimal');
     expect(resolveConfig({ monitor: {} }).monitor?.tokenAccounting).toBe(false);
     expect(resolveConfig({ monitor: { tokenAccounting: true } }).monitor?.tokenAccounting).toBe(true);
+  });
+
+  it('fills lessons defaults for a present block (v0.5, nested unlike workspace)', () => {
+    const r = resolveConfig({ lessons: {} });
+    expect(r.lessons?.store).toBe('.nim/lessons.jsonl');
+    expect(r.lessons?.ttlMs).toBe(90 * 24 * 60 * 60 * 1000);
+  });
+
+  it('lets an explicit lessons.store/ttlMs override the defaults', () => {
+    const r = resolveConfig({ lessons: { store: '.nim/custom-lessons.jsonl', ttlMs: 1000 } });
+    expect(r.lessons?.store).toBe('.nim/custom-lessons.jsonl');
+    expect(r.lessons?.ttlMs).toBe(1000);
   });
 });

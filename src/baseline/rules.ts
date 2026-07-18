@@ -74,18 +74,30 @@ export function checkLintable(text: string, phrases: readonly RegExp[], hasLintC
   };
 }
 
-/** BL-TASKSPECIFIC — a contiguous >=8-line block with >=3 clustered domain stopwords, not behind a link. */
-export function checkTaskSpecific(text: string, stopwords: readonly string[]): CheckResult {
+/**
+ * BL-TASKSPECIFIC — a contiguous window-sized block with >=threshold
+ * clustered domain stopwords, not behind a link. `window`/`threshold`
+ * default to the original 8-line/3-term constants (backward-compatible —
+ * every existing 2-arg call site keeps identical behavior). Also reused
+ * directly by `src/workspace/signal-scan.ts` for its off-stack signal scan
+ * with a caller-configured window/threshold — imported, never duplicated.
+ */
+export function checkTaskSpecific(
+  text: string,
+  stopwords: readonly string[],
+  window: number = 8,
+  threshold: number = 3,
+): CheckResult {
   const lines = text.split('\n');
-  const WINDOW = 8;
-  for (let start = 0; start <= lines.length - WINDOW; start++) {
-    const block = lines.slice(start, start + WINDOW).join(' ').toLowerCase();
+  const effectiveWindow = Math.min(window, Math.max(lines.length, 1));
+  for (let start = 0; start <= lines.length - effectiveWindow; start++) {
+    const block = lines.slice(start, start + effectiveWindow).join(' ').toLowerCase();
     const matched = new Set(stopwords.filter((w) => block.includes(w.toLowerCase())));
-    if (matched.size >= 3) {
+    if (matched.size >= threshold) {
       return {
         strategy: 'BL-TASKSPECIFIC',
         pass: false,
-        reason: `lines ${start + 1}-${start + WINDOW} cluster ${matched.size} domain terms (${[...matched].join(', ')}); consider extracting to a referenced detail file`,
+        reason: `lines ${start + 1}-${start + effectiveWindow} cluster ${matched.size} domain terms (${[...matched].join(', ')}); consider extracting to a referenced detail file`,
       };
     }
   }

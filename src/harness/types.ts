@@ -7,6 +7,8 @@
  * Ported + extended from HyperMove `lib/harness/types.ts`, decoupled from MCP.
  */
 
+import type { Lesson, TriggerShape } from '../lessons/types.js';
+
 // ─── Verify strategies (enforcer) ────────────────────────────────────────────
 
 /** A single output-verify strategy. Data-only so it is serializable. */
@@ -77,6 +79,12 @@ export interface DisclosureTrace {
   riskBand: 'low-risk' | 'watch' | 'elevated-risk' | 'high-risk';
 }
 
+/** v0.5 nim-lessons — populated only when a run's skill captures a lesson (additive, optional). */
+export interface LessonsMatchTrace {
+  matchedLessonIds: string[];
+  severity: 'info' | 'warning' | 'critical' | null;
+}
+
 export interface TraceRecord {
   skill: string;
   traceId: string;
@@ -99,6 +107,8 @@ export interface TraceRecord {
   disclosure?: DisclosureTrace;
   /** v0.4 nim-profile — set by the caller when applyProfile() was used. */
   profileTier?: 'frontier' | 'open-weight-verified' | 'open-weight-untested';
+  /** v0.5 nim-lessons — set only when harness.lessons is configured AND a match/capture occurred this run. */
+  lessonsMatch?: LessonsMatchTrace;
 }
 
 // ─── Config vocabulary (nim.json → harness) ──────────────────────────────────
@@ -184,6 +194,12 @@ export interface CacheConfig {
   prices?: Record<string, { base: number; cachedRead: number }>;
 }
 
+/** v0.5 `nim-lessons` — the auto-captured, queryable error/lesson log. Nested under `harness` (unlike `workspace`, a top-level sibling), because `ctx.lessons` is a per-`runHarnessed()`-call concern, same category as `cache`/`context`/`memory`. */
+export interface LessonsConfig {
+  store?: string;
+  ttlMs?: number;
+}
+
 // ─── Injected ctx helpers (interfaces here; implementations in their modules) ─
 
 export interface CacheBlock {
@@ -220,6 +236,11 @@ export interface MemoryHelper {
   setPrior(category: string, value: unknown): void;
 }
 
+export interface LessonsHelper {
+  check(shape: TriggerShape): Lesson[];
+  capture(entry: Omit<Lesson, 'id' | 'capturedAt'>): Lesson;
+}
+
 /** Declarative harness config — the `harness` block of nim.json / a skill. */
 export interface HarnessConfig {
   guard?: GuardConfig | false;
@@ -230,6 +251,7 @@ export interface HarnessConfig {
   memory?: MemoryConfig | false;
   execution?: ExecutionConfig | false;
   cache?: CacheConfig | false;
+  lessons?: LessonsConfig | false;
 }
 
 // ─── Skill definition ─────────────────────────────────────────────────────
@@ -247,6 +269,7 @@ export interface SkillContext {
   cache?: CacheHelper;
   context?: ContextHelper;
   memory?: MemoryHelper;
+  lessons?: LessonsHelper;
   [key: string]: unknown;
 }
 

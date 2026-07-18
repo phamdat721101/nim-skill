@@ -24,6 +24,7 @@ import type {
   ClassifiedError,
   RunStatus,
   ErrorClass,
+  LessonsMatchTrace,
 } from './types.js';
 import {
   resolveConfig,
@@ -41,6 +42,7 @@ import { verifyOrHeal } from '../enforcer/output-enforcer.js';
 import { createContextHelper } from '../context/index.js';
 import { createMemoryHelper, verifyKey } from '../memory/index.js';
 import { createCacheHelper, computeRoi } from '../cache/index.js';
+import { createLessonsHelper } from '../lessons/index.js';
 import { estimateTokensOf } from '../tokens.js';
 
 type Dict = Record<string, unknown>;
@@ -108,9 +110,10 @@ async function enforceWithMemory<O extends Dict>(
 function buildRunCtx(ctx: SkillContext, cfg: ResolvedHarnessConfig): {
   runCtx: SkillContext;
   getCacheUsage: () => ReturnType<ReturnType<typeof createCacheHelper>['getRecorded']>;
+  getLessonsMatch: () => LessonsMatchTrace | undefined;
 } {
-  const enabled = cfg.cache || cfg.context || cfg.memory || cfg.execution?.isolate;
-  if (!enabled) return { runCtx: ctx, getCacheUsage: () => null };
+  const enabled = cfg.cache || cfg.context || cfg.memory || cfg.execution?.isolate || cfg.lessons;
+  if (!enabled) return { runCtx: ctx, getCacheUsage: () => null, getLessonsMatch: () => undefined };
 
   // Isolation (U2): a cloned ctx keeps intermediate/retry state out of the caller's ctx.
   const runCtx: SkillContext = { ...ctx };
@@ -118,7 +121,35 @@ function buildRunCtx(ctx: SkillContext, cfg: ResolvedHarnessConfig): {
   if (cfg.cache) runCtx.cache = cacheHandle.helper;
   if (cfg.context) runCtx.context = createContextHelper(cfg.context);
   if (cfg.memory) runCtx.memory = createMemoryHelper(cfg.memory);
-  return { runCtx, getCacheUsage: () => cacheHandle.getRecorded() };
+
+  // v0.5 nim-lessons — track captured/matched lesson ids this run so the trace can
+  // report them additively, mirroring how cacheHandle.getRecorded() feeds cacheTrace.
+  const seen: { ids: string[]; severity: LessonsMatchTrace['severity'] } = { ids: [], severity: null };
+  if (cfg.lessons) {
+    const helper = createLessonsHelper(cfg.lessons);
+    runCtx.lessons = {
+      check(shape) {
+        const matches = helper.check(shape);
+        for (const m of matches) seen.ids.push(m.id);
+        if (matches.some((m) => m.severity === 'critical')) seen.severity = 'critical';
+        else if (!seen.severity && matches.some((m) => m.severity === 'warning')) seen.severity = 'warning';
+        else if (!seen.severity && matches.length) seen.severity = 'info';
+        return matches;
+      },
+      capture(entry) {
+        const lesson = helper.capture(entry);
+        seen.ids.push(lesson.id);
+        if (lesson.severity === 'critical' || !seen.severity) seen.severity = lesson.severity;
+        return lesson;
+      },
+    };
+  }
+
+  return {
+    runCtx,
+    getCacheUsage: () => cacheHandle.getRecorded(),
+    getLessonsMatch: () => (seen.ids.length ? { matchedLessonIds: [...seen.ids], severity: seen.severity } : undefined),
+  };
 }
 
 /**
@@ -136,7 +167,7 @@ export async function runHarnessed<O extends Dict = Dict>(
   const monitor = createMonitor(cfg.monitor);
   const traceId = newTraceId();
   const startedAt = Date.now();
-  const { runCtx, getCacheUsage } = buildRunCtx(ctx, cfg);
+  const { runCtx, getCacheUsage, getLessonsMatch } = buildRunCtx(ctx, cfg);
 
   const accounting = !!(cfg.monitor?.tokenAccounting || cfg.context);
   const roiFields = (status: RunStatus, errorClass: ErrorClass | undefined, verified: boolean, heals: number, out: unknown): Partial<TraceFields> => {
@@ -197,12 +228,14 @@ export async function runHarnessed<O extends Dict = Dict>(
       : undefined;
 
   // ⑤ success trace + envelope
+  const lessonsMatch = getLessonsMatch();
   const trace = emit({
     status: 'success',
     durationMs: dur(),
     ...(cfg.enforcer ? { verifyPassed: enforced.verified, healCount: enforced.heals } : {}),
     ...roiFields('success', undefined, enforced.verified, enforced.heals, enforced.output),
     ...(cacheTrace ? { cache: cacheTrace } : {}),
+    ...(lessonsMatch ? { lessonsMatch } : {}),
   });
 
   return {

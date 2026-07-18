@@ -10,14 +10,20 @@ import { Command } from 'commander';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { VERSION } from './index.js';
-import { loadNimJson, mergeHarness, resolveConfig, loadBaselineJson, resolveBaselineConfig } from './config.js';
+import { loadNimJson, mergeHarness, resolveConfig, loadBaselineJson, resolveBaselineConfig, loadWorkspaceJson, resolveWorkspaceConfig } from './config.js';
 import { runHarnessed, HarnessExecutionError } from './harness/runtime.js';
 import { verifyOrHeal } from './enforcer/output-enforcer.js';
 import { renderDashboard } from './monitor/dashboard.js';
 import { GuardError } from './guard/guard.js';
 import { PRIMITIVES, UMBRELLA, HOST_DIRS, resolveTargetDirs, expandTargets, sourceOf, installSkill } from './install.js';
 import { createBaselineLinter } from './baseline/index.js';
+import { createWorkspaceGuard } from './workspace/index.js';
 import { createIndexMeter } from './index-meter/index.js';
+import { createLessonsHelper } from './lessons/index.js';
+import { createLessonsStore } from './lessons/store.js';
+import { readHookInputFromStdin } from './hook-adapters/stdin-read.js';
+import { toClaudeCodeDecision } from './hook-adapters/claude-code.js';
+import { toKiroCliDecision } from './hook-adapters/kiro-cli.js';
 import { readMcpConfig, readSkillsDir } from './index-meter/adapters.js';
 import { detectTier } from './profile/index.js';
 import { tightenFor } from './profile/tiers.js';
@@ -241,6 +247,147 @@ profileCmd
     const delta = tightenFor(opts.tier as never, sample);
     process.stdout.write(JSON.stringify(delta, null, 2) + '\n');
   });
+
+const workspaceCmd = program.command('workspace').description('Hook-native existence + identity + subject-matter + staleness gate for a proposed Write/Edit.');
+
+workspaceCmd
+  .command('check')
+  .argument('<path>', 'proposed file to check (reads its current on-disk content)')
+  .option('--json', 'emit the raw WorkspaceCheckResult as JSON')
+  .description('One-shot check against a proposed file (for scripting/CI). Prints the recommendation.')
+  .action((path: string, opts: { json?: boolean }) => {
+    if (!existsSync(path)) {
+      process.stderr.write(`nim: no file found at ${path}\n`);
+      process.exitCode = 1;
+      return;
+    }
+    const cfg = resolveWorkspaceConfig(loadWorkspaceJson());
+    const guard = createWorkspaceGuard(cfg);
+    const result = guard.check({ filePath: path, content: readFileSync(path, 'utf8') });
+    if (opts.json) {
+      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    } else {
+      process.stdout.write(`${result.recommendation}: ${result.reason}\n`);
+      if (result.staleWarning) process.stdout.write(`nim: ${result.staleWarning}\n`);
+    }
+    if (cfg.mode === 'strict' && result.recommendation === 'BLOCK') process.exitCode = 1;
+  });
+
+workspaceCmd
+  .command('audit')
+  .argument('[dir]', 'directory to scan for existence-overlap pairs', '.')
+  .description('Scan a directory for existing existence-overlap pairs among its own SKILL.md-declared artifacts.')
+  .action((dir: string) => {
+    const cfg = resolveWorkspaceConfig(loadWorkspaceJson());
+    const guard = createWorkspaceGuard(cfg);
+    const pairs = guard.audit(dir);
+    if (pairs.length === 0) {
+      process.stdout.write('nim: no existence-overlap pairs found\n');
+      return;
+    }
+    for (const p of pairs) process.stdout.write(`${p.pathA} <-> ${p.pathB}: ${p.overlapPct}% overlap\n`);
+  });
+
+workspaceCmd
+  .command('hook')
+  .requiredOption('--format <format>', 'output shape: claude-code | kiro-cli')
+  .option('--stdin', 'read a PreToolUse-shaped JSON payload from stdin (tool_name/tool_input.file_path/tool_input.content)')
+  .description('Run createWorkspaceGuard().check() against a PreToolUse tool-call payload and emit a ready-to-paste hook decision. --format selects the exact output shape for each CLI host.')
+  .action(async (opts: { format: string; stdin?: boolean }) => {
+    if (opts.format !== 'claude-code' && opts.format !== 'kiro-cli') {
+      process.stderr.write(`nim: unknown --format '${opts.format}'. Options: claude-code, kiro-cli\n`);
+      process.exitCode = 1;
+      return;
+    }
+    if (!opts.stdin) {
+      process.stderr.write('nim: workspace hook requires --stdin (no other input source is wired yet)\n');
+      process.exitCode = 1;
+      return;
+    }
+
+    let payload: Record<string, unknown>;
+    try {
+      payload = await readHookInputFromStdin();
+    } catch (err) {
+      const msg = (err as Error).message;
+      process.stderr.write(`${msg.startsWith('nim:') ? msg : `nim: invalid input on stdin: ${msg}`}\n`);
+      process.exitCode = 1;
+      return;
+    }
+    const toolInput = (payload.tool_input ?? {}) as { file_path?: string; content?: string };
+    const filePath = toolInput.file_path ?? '';
+    const content = toolInput.content ?? '';
+
+    const cfg = resolveWorkspaceConfig(loadWorkspaceJson());
+    const guard = createWorkspaceGuard(cfg);
+    const result = guard.check({ filePath, content });
+
+    if (opts.format === 'claude-code') {
+      process.stdout.write(JSON.stringify(toClaudeCodeDecision(result, cfg.mode)) + '\n');
+      return;
+    }
+    const decision = toKiroCliDecision(result, cfg.mode);
+    if (decision.stdout) process.stdout.write(decision.stdout);
+    if (decision.stderr) process.stderr.write(decision.stderr);
+    process.exitCode = decision.exitCode;
+  });
+
+const lessonsCmd = program.command('lessons').description('Auto-captured, queryable error/lesson log — a similarly-shaped-action-previously-failed check, deterministic (glob + literal-equality), not semantic.');
+
+lessonsCmd
+  .command('capture')
+  .requiredOption('--tool-name <name>', 'tool name this lesson\'s trigger shape matches, e.g. Write')
+  .requiredOption('--path-glob <glob>', 'glob the trigger shape matches against a candidate path')
+  .option('--content-signal <signal>', 'optional content-signal label, e.g. off-stack-cluster')
+  .requiredOption('--what <text>', 'what went wrong')
+  .requiredOption('--fix <text>', 'the correct pattern going forward')
+  .option('--severity <severity>', 'info | warning | critical', 'warning')
+  .option('--source <source>', 'manual | auto', 'manual')
+  .description('Append a new lesson to the local JSONL store.')
+  .action((opts: { toolName: string; pathGlob: string; contentSignal?: string; what: string; fix: string; severity: string; source: string }) => {
+    const cfg = resolveConfig(loadNimJson()).lessons ?? { store: '.nim/lessons.jsonl', ttlMs: 90 * 24 * 60 * 60 * 1000 };
+    const helper = createLessonsHelper(cfg);
+    const lesson = helper.capture({
+      triggerShape: { toolName: opts.toolName, pathGlob: opts.pathGlob, contentSignal: opts.contentSignal ?? null },
+      whatWentWrong: opts.what,
+      correctPattern: opts.fix,
+      severity: opts.severity as 'info' | 'warning' | 'critical',
+      source: opts.source as 'manual' | 'auto',
+    });
+    process.stdout.write(`nim: captured lesson ${lesson.id}\n`);
+  });
+
+lessonsCmd
+  .command('check')
+  .requiredOption('--tool-name <name>', 'tool name of the candidate action, e.g. Write')
+  .requiredOption('--path <path>', 'candidate path to check against logged trigger shapes')
+  .option('--content-signal <signal>', 'optional content-signal label to match against')
+  .description('Check whether a candidate action matches any logged lesson\'s trigger shape.')
+  .action((opts: { toolName: string; path: string; contentSignal?: string }) => {
+    const cfg = resolveConfig(loadNimJson()).lessons ?? { store: '.nim/lessons.jsonl', ttlMs: 90 * 24 * 60 * 60 * 1000 };
+    const helper = createLessonsHelper(cfg);
+    const matches = helper.check({ toolName: opts.toolName, pathGlob: opts.path, contentSignal: opts.contentSignal ?? null });
+    if (matches.length === 0) {
+      process.stdout.write('nim: no matching lessons\n');
+      return;
+    }
+    for (const m of matches) process.stdout.write(`[${m.severity}] ${m.id}: ${m.whatWentWrong} — ${m.correctPattern}\n`);
+  });
+
+lessonsCmd
+  .command('list')
+  .description('List every non-expired lesson in the local JSONL store.')
+  .action(() => {
+    const cfg = resolveConfig(loadNimJson()).lessons ?? { store: '.nim/lessons.jsonl', ttlMs: 90 * 24 * 60 * 60 * 1000 };
+    const store = createLessonsStore(cfg);
+    const all = store.readAll();
+    if (all.length === 0) {
+      process.stdout.write('nim: no lessons logged\n');
+      return;
+    }
+    for (const l of all) process.stdout.write(`[${l.severity}] ${l.id} (${l.source}, ${l.capturedAt}): ${l.whatWentWrong}\n`);
+  });
+
 
 program.parseAsync(process.argv);
 

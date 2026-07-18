@@ -114,4 +114,32 @@ describe('runHarnessed — full pipeline dogfood', () => {
   });
 });
 
+describe('runHarnessed — lessons (LS-05 rollback contract)', () => {
+  it('a run with lessons unset produces a trace with NO lessonsMatch field (rollback contract)', async () => {
+    const s = skill({ harness: {}, execute: async () => ({ ok: true }) });
+    const { trace } = await runHarnessed(s, {}, ctx);
+    expect(trace).not.toHaveProperty('lessonsMatch');
+    expect((trace as Record<string, unknown>).lessonsMatch).toBeUndefined();
+  });
+
+  it('a run with lessons set injects ctx.lessons and records a match', async () => {
+    const s = skill({
+      name: 'y',
+      harness: { lessons: { store: '.nim/rt-test-lessons.jsonl' } },
+      execute: async (_input, runCtx) => {
+        runCtx.lessons?.capture({
+          triggerShape: { toolName: 'Write', pathGlob: '*', contentSignal: null },
+          whatWentWrong: 'x',
+          correctPattern: 'y',
+          severity: 'info',
+          source: 'auto',
+        });
+        return { ok: true };
+      },
+    });
+    const { trace } = await runHarnessed(s, {}, ctx);
+    expect(trace).toBeDefined();
+  });
+});
+
 afterEach(() => cleanNimArtifacts());

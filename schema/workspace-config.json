@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/phamdat721101/nim-skill/schema/workspace-config.json",
+  "title": "WorkspaceConfig",
+  "description": "Top-level nim.json 'workspace' block — a sibling of 'harness', 'baseline', and 'profile', not nested under any of them. Gates a raw Write/Edit tool call from OUTSIDE runHarnessed() entirely.",
+  "type": "object",
+  "properties": {
+    "stack": { "type": "array", "items": { "type": "string" }, "description": "e.g. [\"typescript\", \"web3\", \"solidity\"]" },
+    "offStackSignalTerms": {
+      "type": "object",
+      "additionalProperties": { "type": "array", "items": { "type": "string" } },
+      "description": "stack-name -> terms that indicate THAT other stack, e.g. { \"java\": [\"@Transactional\", \"AbstractRoutingDataSource\", \"gradle\", \"JDK 21\"] }"
+    },
+    "clusterWindow": { "type": "integer", "minimum": 1, "default": 8 },
+    "clusterThreshold": { "type": "integer", "minimum": 1, "default": 3 },
+    "existenceOverlapThresholds": {
+      "type": "object",
+      "properties": {
+        "extend": { "type": "number" },
+        "compose": { "type": "number" },
+        "iterate": { "type": "number" }
+      },
+      "default": { "extend": 50, "compose": 80, "iterate": 20 }
+    },
+    "livenessFile": { "type": "string", "description": "e.g. \"_brain/product-state.md\"" },
+    "livenessCadence": { "type": "string", "description": "simple grammar, not a cron string, e.g. \"Mon,Wed,Fri\"" },
+    "mode": { "type": "string", "enum": ["warn", "strict", "off"], "default": "warn" }
+  },
+  "additionalProperties": false
+}

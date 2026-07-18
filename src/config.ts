@@ -11,6 +11,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { z } from 'zod';
+import { deriveOffStackByPath } from './workspace/rules.js';
 import type {
   HarnessConfig,
   GuardConfig,
@@ -22,6 +23,7 @@ import type {
   ExecutionConfig,
   CacheConfig,
   CacheProvider,
+  LessonsConfig,
   VerifyStrategy,
   EnforceMode,
 } from './harness/types.js';
@@ -114,6 +116,17 @@ const cacheSchema = z.object({
     .optional(),
 });
 
+/**
+ * `lessons` is NESTED inside `harnessSchema` (unlike `workspace`, a top-level
+ * sibling key) — `ctx.lessons` is a per-`runHarnessed()`-call concern, same
+ * category as `cache`/`context`/`memory`, not a build-time/hook-native
+ * concern like `workspace`/`baseline`/`profile`.
+ */
+const lessonsSchema = z.object({
+  store: z.string().optional(),
+  ttlMs: z.number().int().nonnegative().optional(),
+});
+
 const harnessSchema = z.object({
   guard: z.union([guardSchema, z.literal(false)]).optional(),
   errorHandler: z.union([errorHandlerSchema, z.literal(false)]).optional(),
@@ -123,6 +136,7 @@ const harnessSchema = z.object({
   memory: z.union([memorySchema, z.literal(false)]).optional(),
   execution: z.union([executionSchema, z.literal(false)]).optional(),
   cache: z.union([cacheSchema, z.literal(false)]).optional(),
+  lessons: z.union([lessonsSchema, z.literal(false)]).optional(),
 });
 
 /**
@@ -150,10 +164,30 @@ const profileSchema = z.object({
   verifiedModelPatterns: z.array(z.string()).optional(),
 });
 
+/**
+ * `workspace` is a top-level nim.json sibling of `harness`/`baseline`/`profile`
+ * — same sibling-key scoping, same reason: it gates a raw Write/Edit tool
+ * call from OUTSIDE runHarnessed() entirely (04 §2.4), not a per-call
+ * runHarnessed() concern.
+ */
+export const workspaceSchema = z.object({
+  stack: z.array(z.string()).optional(),
+  offStackSignalTerms: z.record(z.array(z.string())).optional(),
+  clusterWindow: z.number().int().positive().optional(),
+  clusterThreshold: z.number().int().positive().optional(),
+  existenceOverlapThresholds: z
+    .object({ extend: z.number(), compose: z.number(), iterate: z.number() })
+    .optional(),
+  livenessFile: z.string().optional(),
+  livenessCadence: z.string().optional(),
+  mode: z.enum(['warn', 'strict', 'off']).optional(),
+});
+
 const nimJsonSchema = z.object({
   harness: harnessSchema.optional(),
   baseline: baselineSchema.optional(),
   profile: profileSchema.optional(),
+  workspace: workspaceSchema.optional(),
 });
 
 /** Validate + fill defaults for the `baseline` nim.json block. Never folded into harnessSchema. */
@@ -171,6 +205,50 @@ export function resolveBaselineConfig(input: unknown = {}): {
     maxInstructions: parsed.maxInstructions ?? 100,
     mode: parsed.mode ?? 'warn',
     detailDir: parsed.detailDir ?? 'agent_docs',
+  };
+}
+
+/**
+ * Resolved `workspace` shape — `offStackByPath` is derived (not user-facing)
+ * from `offStackSignalTerms`'s keys, giving `checkLocationMatch` a
+ * path-prefix -> allowed-stack-names RegExp map. `research/` is the one
+ * seeded default prefix (matches the Jul-17-incident-shaped location); a
+ * project can extend coverage by declaring more `offStackSignalTerms` keys,
+ * but nim-skill does not invent additional path prefixes on its own.
+ */
+export interface ResolvedWorkspaceConfig {
+  stack: string[];
+  offStackSignalTerms: Record<string, string[]>;
+  offStackByPath?: Record<string, RegExp>;
+  clusterWindow: number;
+  clusterThreshold: number;
+  existenceOverlapThresholds: { extend: number; compose: number; iterate: number };
+  livenessFile: string;
+  livenessCadence: string[];
+  mode: 'warn' | 'strict' | 'off';
+}
+
+/**
+ * Validate + fill defaults for the `workspace` nim.json block. Absent
+ * `stack` softens `mode` to `'warn'`-only regardless of the configured mode
+ * (04 §2.4's deliberate never-loosen-on-absence asymmetry) — enforced by the
+ * hook-adapter/guard layer reading `stack.length === 0`, not by silently
+ * rewriting `mode` here (this resolver reports the config as declared).
+ */
+export function resolveWorkspaceConfig(input: unknown = {}): ResolvedWorkspaceConfig {
+  const parsed = workspaceSchema.parse(input ?? {});
+  const stack = parsed.stack ?? [];
+  const offStackSignalTerms = parsed.offStackSignalTerms ?? {};
+  return {
+    stack,
+    offStackSignalTerms,
+    offStackByPath: deriveOffStackByPath(stack),
+    clusterWindow: parsed.clusterWindow ?? 8,
+    clusterThreshold: parsed.clusterThreshold ?? 3,
+    existenceOverlapThresholds: parsed.existenceOverlapThresholds ?? { extend: 50, compose: 80, iterate: 20 },
+    livenessFile: parsed.livenessFile ?? '',
+    livenessCadence: parsed.livenessCadence ? parsed.livenessCadence.split(',').map((s) => s.trim()) : [],
+    mode: parsed.mode ?? 'warn',
   };
 }
 
@@ -232,6 +310,11 @@ export interface ResolvedCache {
   prices: Record<string, { base: number; cachedRead: number }>;
 }
 
+export interface ResolvedLessons {
+  store: string;
+  ttlMs: number;
+}
+
 export interface ResolvedHarnessConfig {
   guard: ResolvedGuard | null;
   errorHandler: ResolvedErrorHandler | null;
@@ -241,6 +324,7 @@ export interface ResolvedHarnessConfig {
   memory: ResolvedMemory | null;
   execution: ResolvedExecution | null;
   cache: ResolvedCache | null;
+  lessons: ResolvedLessons | null;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────
@@ -340,6 +424,13 @@ function resolveCache(c: CacheConfig): ResolvedCache {
   };
 }
 
+function resolveLessons(c: LessonsConfig): ResolvedLessons {
+  return {
+    store: c.store ?? (process.env.NIM_LESSONS_FILE ?? '.nim/lessons.jsonl'),
+    ttlMs: c.ttlMs ?? 90 * 24 * 60 * 60 * 1000, // 90d default — lessons outlive a single memory-cache TTL
+  };
+}
+
 // ─── Public API ─────────────────────────────────────────────────────────
 
 /**
@@ -359,6 +450,7 @@ export function resolveConfig(input: HarnessConfig = {}): ResolvedHarnessConfig 
     memory: parsed.memory ? resolveMemory(parsed.memory) : null,
     execution: parsed.execution ? resolveExecution(parsed.execution) : null,
     cache: parsed.cache ? resolveCache(parsed.cache) : null,
+    lessons: parsed.lessons ? resolveLessons(parsed.lessons) : null,
   };
 }
 
@@ -392,4 +484,12 @@ export function loadProfileJson(cwd: string = process.cwd()): unknown {
   if (!existsSync(file)) return {};
   const raw = JSON.parse(readFileSync(file, 'utf8')) as unknown;
   return nimJsonSchema.parse(raw).profile ?? {};
+}
+
+/** Load the `workspace` block from a nim.json in `cwd` (if present). Sibling to loadNimJson, same no-throw-on-missing contract. */
+export function loadWorkspaceJson(cwd: string = process.cwd()): unknown {
+  const file = resolve(cwd, 'nim.json');
+  if (!existsSync(file)) return {};
+  const raw = JSON.parse(readFileSync(file, 'utf8')) as unknown;
+  return nimJsonSchema.parse(raw).workspace ?? {};
 }

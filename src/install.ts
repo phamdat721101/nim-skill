@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 /** Package root (dist/.. or src/.. — both resolve to the repo root). */
 export const PKG_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-export const PRIMITIVES = ['nim-guard', 'nim-error-handler', 'nim-monitor', 'nim-enforcer', 'nim-context', 'nim-cache', 'nim-baseline', 'nim-index', 'nim-profile'] as const;
+export const PRIMITIVES = ['nim-guard', 'nim-error-handler', 'nim-monitor', 'nim-enforcer', 'nim-context', 'nim-cache', 'nim-baseline', 'nim-index', 'nim-profile', 'nim-workspace', 'nim-lessons'] as const;
 
 /** The umbrella skill installs as a folder containing the top-level SKILL.md. */
 export const UMBRELLA = 'nim-skill';
