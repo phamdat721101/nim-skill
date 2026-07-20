@@ -4,7 +4,7 @@
  * Each primitive is also exported standalone.
  */
 
-export const VERSION = '0.3.0';
+export const VERSION = '0.6.0';
 
 // Core
 export { runHarnessed, HarnessExecutionError } from './harness/runtime.js';
@@ -15,6 +15,12 @@ export {
   resolveConfig,
   mergeHarness,
   loadNimJson,
+  loadBaselineJson,
+  resolveBaselineConfig,
+  loadWorkspaceJson,
+  resolveWorkspaceConfig,
+  loadWorkruleJson,
+  resolveWorkruleConfig,
   type ResolvedHarnessConfig,
   type ResolvedGuard,
   type ResolvedErrorHandler,
@@ -57,3 +63,6 @@ export { createContextHelper, ContextBudgetError } from './context/index.js';
 export { createMemoryHelper, verifyKey } from './memory/index.js';
 export { toTerminal, assertTerminal, SerializeGuardError, type TerminalFormat } from './serialize/index.js';
 export { createCacheHelper, computeRoi, pickAdapter, parseUsage, type ParsedUsage, type CacheHelperHandle } from './cache/index.js';
+
+// v0.6 — workrule
+export { createWorkruleHelper, WORKRULE_QUESTIONS, type AgentSupportEntry } from './workrule/index.js';

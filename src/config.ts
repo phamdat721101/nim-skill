@@ -183,11 +183,21 @@ export const workspaceSchema = z.object({
   mode: z.enum(['warn', 'strict', 'off']).optional(),
 });
 
+/**
+ * `workrule` is a top-level nim.json sibling of `harness`/`baseline`/
+ * `profile`/`workspace` — same reason as the others: it gates/logs an
+ * agent's OWN editing session, not a per-call runHarnessed() concern.
+ */
+const workruleSchema = z.object({
+  logFile: z.string().optional(),
+});
+
 const nimJsonSchema = z.object({
   harness: harnessSchema.optional(),
   baseline: baselineSchema.optional(),
   profile: profileSchema.optional(),
   workspace: workspaceSchema.optional(),
+  workrule: workruleSchema.optional(),
 });
 
 /** Validate + fill defaults for the `baseline` nim.json block. Never folded into harnessSchema. */
@@ -492,4 +502,18 @@ export function loadWorkspaceJson(cwd: string = process.cwd()): unknown {
   if (!existsSync(file)) return {};
   const raw = JSON.parse(readFileSync(file, 'utf8')) as unknown;
   return nimJsonSchema.parse(raw).workspace ?? {};
+}
+
+/** Load the `workrule` block from a nim.json in `cwd` (if present). Sibling to loadNimJson, same no-throw-on-missing contract. */
+export function loadWorkruleJson(cwd: string = process.cwd()): unknown {
+  const file = resolve(cwd, 'nim.json');
+  if (!existsSync(file)) return {};
+  const raw = JSON.parse(readFileSync(file, 'utf8')) as unknown;
+  return nimJsonSchema.parse(raw).workrule ?? {};
+}
+
+/** Validate + fill defaults for the `workrule` nim.json block. */
+export function resolveWorkruleConfig(input: unknown = {}): { logFile: string } {
+  const parsed = workruleSchema.parse(input ?? {});
+  return { logFile: parsed.logFile ?? (process.env.NIM_WORKRULE_LOG ?? '.nim/agent-support-log.md') };
 }

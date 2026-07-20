@@ -10,7 +10,7 @@ import { Command } from 'commander';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { VERSION } from './index.js';
-import { loadNimJson, mergeHarness, resolveConfig, loadBaselineJson, resolveBaselineConfig, loadWorkspaceJson, resolveWorkspaceConfig } from './config.js';
+import { loadNimJson, mergeHarness, resolveConfig, loadBaselineJson, resolveBaselineConfig, loadWorkspaceJson, resolveWorkspaceConfig, loadWorkruleJson, resolveWorkruleConfig } from './config.js';
 import { runHarnessed, HarnessExecutionError } from './harness/runtime.js';
 import { verifyOrHeal } from './enforcer/output-enforcer.js';
 import { renderDashboard } from './monitor/dashboard.js';
@@ -21,6 +21,7 @@ import { createWorkspaceGuard } from './workspace/index.js';
 import { createIndexMeter } from './index-meter/index.js';
 import { createLessonsHelper } from './lessons/index.js';
 import { createLessonsStore } from './lessons/store.js';
+import { createWorkruleHelper, WORKRULE_QUESTIONS } from './workrule/index.js';
 import { readHookInputFromStdin } from './hook-adapters/stdin-read.js';
 import { toClaudeCodeDecision } from './hook-adapters/claude-code.js';
 import { toKiroCliDecision } from './hook-adapters/kiro-cli.js';
@@ -388,6 +389,43 @@ lessonsCmd
     for (const l of all) process.stdout.write(`[${l.severity}] ${l.id} (${l.source}, ${l.capturedAt}): ${l.whatWentWrong}\n`);
   });
 
+
+const workruleCmd = program.command('workrule').description('The six-rule working checklist an agent self-checks against its OWN editing behavior (clean/SOLID, no repeated mistakes, essential files, partial reads, deployability, tracked memory).');
+
+workruleCmd
+  .command('check')
+  .description('Print the six-question self-check checklist (no LLM call — a self-check prompt, not an automated linter).')
+  .action(() => {
+    for (const q of WORKRULE_QUESTIONS) process.stdout.write(`[${q.id}] ${q.question}\n`);
+  });
+
+workruleCmd
+  .command('log')
+  .requiredOption('--primitive <name>', 'which nim-skill primitive fired, e.g. nim-cache')
+  .requiredOption('--effect <text>', 'what it caught / prevented / enabled this task')
+  .option('--tokens-saved <n>', 'measured token/context saving, if known')
+  .description('Append a tracked-memory entry (WR-06) to .nim/agent-support-log.md (gitignored).')
+  .action((opts: { primitive: string; effect: string; tokensSaved?: string }) => {
+    const cfg = resolveWorkruleConfig(loadWorkruleJson());
+    const helper = createWorkruleHelper(cfg);
+    const tokensSaved = opts.tokensSaved !== undefined ? Number(opts.tokensSaved) : undefined;
+    const entry = helper.log({ primitive: opts.primitive, effect: opts.effect, ...(tokensSaved !== undefined && !Number.isNaN(tokensSaved) ? { tokensSaved } : {}) });
+    process.stdout.write(`nim: logged (${entry.primitive} @ ${entry.at})\n`);
+  });
+
+workruleCmd
+  .command('history')
+  .description('Print every tracked-memory entry logged so far this project.')
+  .action(() => {
+    const cfg = resolveWorkruleConfig(loadWorkruleJson());
+    const helper = createWorkruleHelper(cfg);
+    const all = helper.history();
+    if (all.length === 0) {
+      process.stdout.write('nim: no agent-support entries logged yet\n');
+      return;
+    }
+    for (const e of all) process.stdout.write(`${e.at}  [${e.primitive}]  ${e.effect}${e.tokensSaved !== undefined ? `  (~${e.tokensSaved} tokens saved)` : ''}\n`);
+  });
 
 program.parseAsync(process.argv);
 

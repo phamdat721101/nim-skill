@@ -4,9 +4,11 @@ description: |
   Local-first, host-portable agent-harness toolkit. Wrap any agent task in
   runHarnessed() to make it reliable: guarded (agentjacking + cost/rate/allowlist),
   error-recovered (classify → retry/backoff/circuit-breaker/fallback/escalate),
-  monitored (traces), and output-verified-before-ship (unbypassable). Composes 4
+  monitored (traces), and output-verified-before-ship (unbypassable). Also ships
+  hook-native workspace/lessons/workrule primitives that run OUTSIDE
+  runHarnessed(), gating a proposed Write/Edit before it lands. Composes 11
   installable primitives. Zero network on the default path. MIT.
-version: 0.4.0
+version: 0.6.0
 author: phamdat721101 (PhamDat / @nxNim9)
 license: MIT
 tier: meta
@@ -15,21 +17,29 @@ install: npx github:phamdat721101/nim-skill install
 when_to_use: |
   - Make an agent task reliable: verify output before ship, recover errors, guard inputs.
   - Cut token cost: context budget, verify/priors cache, provider prompt-caching (45–80% input-cost cut).
+  - Lint a memory file, meter a tool-disclosure tax, tighten config for a weaker model tier.
+  - Gate a proposed Write/Edit against workspace identity/existence + a working-rule self-check.
   - Add drop-in reliability without rewriting your agent into a framework.
-  - Keywords: harness, verify output, block bad output, retry, circuit breaker, cost cap, agentjacking, context caching, token savings.
+  - Keywords: harness, verify output, block bad output, retry, circuit breaker, cost cap, agentjacking, context caching, token savings, memory-file lint, tool-disclosure tax, model tier, workspace guard, working rule.
 schema:
   harness_config: ./schema/harness-config.json
   trace: ./schema/trace.json
   verify_result: ./schema/verify-result.json
   classified_error: ./schema/classified-error.json
+  baseline_config: ./schema/baseline-config.json
+  index_config: ./schema/index-config.json
+  profile_config: ./schema/profile-config.json
+  workrule_config: ./schema/workrule-config.json
 test_invocations: ./tests/e2e/dogfood.test.ts
 companion_publish:
   - clawhub
   - anthropic-skills-registry
   - npm
 side_effects:
-  - "Reads nim.json (harness config) from the project root when present"
+  - "Reads nim.json (harness config + baseline/profile/workspace/workrule blocks) from the project root when present"
   - "Writes trace JSONL to .nim/traces.jsonl when the file exporter is enabled"
+  - "Writes lesson JSONL to .nim/lessons.jsonl when harness.lessons is configured"
+  - "Writes the agent-support markdown log to .nim/agent-support-log.md when `nim-skill workrule log` runs"
   - "Runs verify commands (test/lint/command strategies) via the shell"
   - "Optional: forwards error traces to Sentry when SENTRY_DSN is set (no-op otherwise)"
 identity:
@@ -41,7 +51,14 @@ sub_skills:
   - skills/nim-enforcer
   - skills/nim-context
   - skills/nim-cache
+  - skills/nim-baseline
+  - skills/nim-index
+  - skills/nim-profile
+  - skills/nim-workspace
+  - skills/nim-lessons
+  - skills/nim-workrule
 ---
+
 
 # nim-skill
 

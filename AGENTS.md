@@ -38,6 +38,10 @@ Pipeline (each layer config-gated; disabled ⇒ byte-identical to a bare run):
 - `src/baseline/` — v0.4 nim-baseline: memory-file lint rules + scaffold (CLI-only, no `ctx` helper).
 - `src/index-meter/` — v0.4 nim-index: tool-disclosure token/risk-band meter (CLI-only, no `ctx` helper).
 - `src/profile/` — v0.4 nim-profile: model-tier detection + `applyProfile()` config resolver (library-only).
+- `src/workspace/` — v0.5 nim-workspace: hook-native existence + identity + subject-matter + staleness gate (CLI-only + hook adapters, no `ctx` helper — runs OUTSIDE `runHarnessed()`).
+- `src/lessons/` — v0.5 nim-lessons: auto-captured, queryable error/lesson log (`ctx.lessons` helper + CLI hook-native path).
+- `src/workrule/` — v0.6 nim-workrule: the 6-rule self-check checklist + `.nim/agent-support-log.md` tracked-memory log (CLI-only, no `ctx` helper — a session-boundary self-check, same category as `nim-baseline`).
+- `src/hook-adapters/` — per-host `PreToolUse` decision-shape adapters (Claude Code / Kiro CLI) shared by `nim-workspace` and `nim-lessons`.
 - `src/serialize/` — U5b terminal-only token-optimized serialization (guardrailed).
 - `src/tokens.ts` — single shared approximate token estimator.
 - `src/config.ts` — Zod-validated `nim.json` loader (`resolveConfig`).

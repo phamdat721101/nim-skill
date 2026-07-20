@@ -1,0 +1,11 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/phamdat721101/nim-skill/schema/workrule-config.json",
+  "title": "WorkruleConfig",
+  "description": "Top-level nim.json 'workrule' block — a sibling of 'harness'/'baseline'/'profile'/'workspace', not nested under any of them.",
+  "type": "object",
+  "properties": {
+    "logFile": { "type": "string", "default": ".nim/agent-support-log.md" }
+  },
+  "additionalProperties": false
+}

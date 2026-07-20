@@ -1,9 +1,11 @@
 name: nim-skill
-version: 0.3.0
+version: 0.6.0
 description: >-
   Open, local-first, host-portable agent-harness toolkit. runHarnessed() +
   reliability primitives (guard, error-handler, monitor, enforcer) + token-efficiency
-  (context, memory, cache) as drop-in skills. Enforce, don't instruct. Net-token-negative.
+  (context, memory, cache) + memory-file/tool-disclosure/model-tier hygiene
+  (baseline, index, profile) + hook-native workspace + lessons + workrule
+  primitives, all as drop-in skills. Enforce, don't instruct. Net-token-negative.
 license: MIT
 homepage: https://github.com/phamdat721101/nim-skill
 skills:
@@ -13,3 +15,9 @@ skills:
   - nim-enforcer
   - nim-context
   - nim-cache
+  - nim-baseline
+  - nim-index
+  - nim-profile
+  - nim-workspace
+  - nim-lessons
+  - nim-workrule
