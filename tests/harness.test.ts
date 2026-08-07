@@ -35,6 +35,26 @@ describe('runHarnessed — guard', () => {
     await expect(runHarnessed(s2, {}, ctx)).rejects.toThrow(/tool_not_allowed/);
     expect(s).toBeDefined();
   });
+
+  // ─── v0.8 nim-guard — per-task budget pre-flight check ───────────────────
+
+  it('denies a run pre-flight when the input-size cost estimate exceeds taskBudgetUsd', async () => {
+    const exec = vi.fn(() => ({ ok: true }));
+    const s = skill({ harness: { guard: { taskBudgetUsd: 0.000001 } }, execute: exec });
+    // A large-ish input string produces a nonzero token estimate, which at a
+    // near-zero cap should exceed the per-task budget before execute() runs.
+    const bigInput = { blob: 'x'.repeat(50_000) };
+    await expect(runHarnessed(s, bigInput, ctx)).rejects.toThrow(/task_budget_exceeded/);
+    expect(exec).not.toHaveBeenCalled();
+  });
+
+  it('allows a run when the input-size cost estimate is within the default $5 taskBudget', async () => {
+    const exec = vi.fn(() => ({ ok: true }));
+    const s = skill({ harness: { guard: {} }, execute: exec });
+    const r = await runHarnessed(s, { q: 'hello' }, ctx);
+    expect(r.trace.status).toBe('success');
+    expect(exec).toHaveBeenCalled();
+  });
 });
 
 describe('runHarnessed — error handler', () => {

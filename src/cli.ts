@@ -56,6 +56,16 @@ program
       name: 'cli.run',
       version: VERSION,
       harness,
+      // v0.8 KNOWN GAP: this execute() uses spawnSync (fully synchronous/
+      // blocking) and never receives/checks `ctx.signal`, so `cli.run` does
+      // NOT honor `guard.maxDurationMs` — a shell command that runs past the
+      // configured duration cap is never interrupted by this command. The
+      // library-level `runHarnessed()` duration cap (any async execute() that
+      // observes ctx.signal) works correctly; only THIS CLI path is exempt.
+      // Fixing this requires switching to async `spawn()` + wiring an abort
+      // listener that kills the child process — deliberately out of scope
+      // for v0.8 (decision 7); tracked as a named follow-up, not silently
+      // left undocumented. See docs/prd/14-master-prd-v08-nim-guard-budget.md.
       execute: () => {
         const res = runShell(cmd);
         if (res.code !== 0) throw new Error(`command exited ${res.code}: ${res.stderr.trim()}`);
@@ -99,9 +109,10 @@ program
   .option('--file <path>', 'trace file', '.nim/traces.jsonl')
   .option('--savings', 'show the U3 net-token savings view')
   .option('--cache', 'show the v0.3 cache-ROI view')
+  .option('--budget', 'show the v0.8 per-task budget consumption + timeout view')
   .description('Render the local run dashboard from the JSONL trace file.')
-  .action((_action: string, opts: { file: string; savings?: boolean; cache?: boolean }) => {
-    const view = opts.savings ? 'savings' : opts.cache ? 'cache' : 'default';
+  .action((_action: string, opts: { file: string; savings?: boolean; cache?: boolean; budget?: boolean }) => {
+    const view = opts.savings ? 'savings' : opts.cache ? 'cache' : opts.budget ? 'budget' : 'default';
     process.stdout.write(renderDashboard(opts.file, view) + '\n');
   });
 

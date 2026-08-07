@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { summarizeSavings, summarizeCache } from '../src/monitor/dashboard.js';
+import { summarizeSavings, summarizeCache, summarizeBudget } from '../src/monitor/dashboard.js';
 import type { TraceRecord } from '../src/harness/types.js';
 
 const base = (over: Partial<TraceRecord>): TraceRecord => ({
@@ -39,5 +39,27 @@ describe('dashboard --cache view', () => {
     ]);
     expect(out).toMatch(/hit-rate:/);
     expect(out).toMatch(/break-even/);
+  });
+});
+
+describe('dashboard --budget view (v0.8 nim-guard)', () => {
+  it('reports no data when no budget traces', () => {
+    expect(summarizeBudget([base({})])).toMatch(/no budget traces/);
+  });
+
+  it('aggregates spend vs cap and counts timeouts', () => {
+    const out = summarizeBudget([
+      base({ budget: { capUsd: 5, spentUsd: 1.5, capTokensEquivalent: 1_000_000, spentTokensEquivalent: 300_000, timedOut: false } }),
+      base({ budget: { capUsd: 5, spentUsd: 5.2, capTokensEquivalent: 1_000_000, spentTokensEquivalent: 1_040_000, timedOut: true } }),
+    ]);
+    expect(out).toMatch(/total spent:\s+~\$6\.700000/);
+    expect(out).toMatch(/timeouts:\s+1\/2/);
+    expect(out).toMatch(/⏱ TIMEOUT/);
+  });
+
+  it('renders a distinct row for a timed-out run without throwing', () => {
+    expect(() =>
+      summarizeBudget([base({ budget: { capUsd: 1, spentUsd: 1, capTokensEquivalent: 100, spentTokensEquivalent: 100, timedOut: true } })]),
+    ).not.toThrow();
   });
 });

@@ -68,6 +68,39 @@ describe('createGuard.checkPolicy', () => {
     g.checkPolicy({ agentId: 'a' });
     expect(() => g.checkPolicy({ agentId: 'b' })).not.toThrow();
   });
+
+  // ─── v0.8 nim-guard — per-task budget (Task 2) ───────────────────────────
+
+  it('denies when the per-task budget estimate exceeds taskBudgetUsd', () => {
+    const g = createGuard(guardCfg({ taskBudgetUsd: 1 }));
+    expect(() => g.checkPolicy({ agentId: 'a', taskCostUsd: 2 })).toThrow(/task_budget_exceeded/);
+  });
+
+  it('allows a per-task estimate under taskBudgetUsd', () => {
+    const g = createGuard(guardCfg({ taskBudgetUsd: 5 }));
+    expect(() => g.checkPolicy({ agentId: 'a', taskCostUsd: 1 })).not.toThrow();
+  });
+
+  it('per-task budget does NOT accumulate across calls (unlike the cumulative cost cap)', () => {
+    const g = createGuard(guardCfg({ taskBudgetUsd: 1 }));
+    // Two separate under-cap calls should both pass — proves no cumulative state is shared.
+    g.checkPolicy({ agentId: 'a', taskCostUsd: 0.9 });
+    expect(() => g.checkPolicy({ agentId: 'a', taskCostUsd: 0.9 })).not.toThrow();
+  });
+
+  it('taskBudgetUsd and the cumulative maxCostUsd are orthogonal — one breaching does not trip the other', () => {
+    const g = createGuard(guardCfg({ maxCostUsd: 100, taskBudgetUsd: 1 }));
+    // taskCostUsd breaches the per-task cap; costUsd (cumulative) stays well under maxCostUsd.
+    expect(() => g.checkPolicy({ agentId: 'a', costUsd: 0.01, taskCostUsd: 2 })).toThrow(/task_budget_exceeded/);
+    // A fresh agent with only a cumulative-cap-breaching costUsd, no taskCostUsd, still hits cost_cap_exceeded — not task_budget_exceeded.
+    const g2 = createGuard(guardCfg({ maxCostUsd: 0.01, taskBudgetUsd: 100 }));
+    expect(() => g2.checkPolicy({ agentId: 'b', costUsd: 0.02 })).toThrow(/cost_cap_exceeded/);
+  });
+
+  it('regression: default checkPolicy call (no costUsd/taskCostUsd) behaves exactly as pre-v0.8', () => {
+    const g = createGuard(guardCfg({ maxCostUsd: 0.1, taskBudgetUsd: 5 }));
+    expect(() => g.checkPolicy({ agentId: 'a' })).not.toThrow();
+  });
 });
 
 describe('disabled guard', () => {

@@ -27,7 +27,7 @@ export function classify(err: unknown): { class: ErrorClass; message: string } {
 
   // Explicit hint on the error object takes precedence.
   const hint = (err as { class?: ErrorClass } | null)?.class;
-  if (hint === 'transient' || hint === 'permanent' || hint === 'critical') {
+  if (hint === 'transient' || hint === 'permanent' || hint === 'critical' || hint === 'timeout') {
     return { class: hint, message };
   }
 

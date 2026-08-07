@@ -24,7 +24,7 @@ export function parseTraces(jsonl: string): TraceRecord[] {
     .filter((t): t is TraceRecord => t !== null);
 }
 
-export type DashboardView = 'default' | 'savings' | 'cache';
+export type DashboardView = 'default' | 'savings' | 'cache' | 'budget';
 
 const pctOf = (a: number, b: number): string => (b === 0 ? 'n/a' : `${Math.round((a / b) * 100)}%`);
 
@@ -75,6 +75,32 @@ export function summarizeCache(traces: TraceRecord[]): string {
   return lines.join('\n');
 }
 
+/** v0.8 nim-guard — per-task budget consumption aggregate + timeout rows. */
+export function summarizeBudget(traces: TraceRecord[]): string {
+  const withBudget = traces.filter((t) => t.budget !== undefined);
+  if (withBudget.length === 0) return 'nim monitor (budget) — no budget traces yet (enable guard.taskBudgetUsd or guard.taskBudgetTokens).';
+  let spentUsd = 0;
+  let capUsd = 0;
+  let timedOutCount = 0;
+  const lines: string[] = [];
+  for (const t of withBudget) {
+    const b = t.budget!;
+    spentUsd += b.spentUsd;
+    capUsd += b.capUsd;
+    if (b.timedOut) timedOutCount += 1;
+    const marker = b.timedOut ? ' ⏱ TIMEOUT' : '';
+    lines.push(`  ${t.startedAt}  ${t.skill}  $${b.spentUsd.toFixed(6)} / $${b.capUsd.toFixed(6)} cap (${b.spentTokensEquivalent}/${b.capTokensEquivalent} tokens-eq)${marker}`);
+  }
+  return [
+    `nim monitor (budget) — ${withBudget.length} run(s) with a per-task budget configured`,
+    `  total spent:   ~$${spentUsd.toFixed(6)}`,
+    `  total cap:     ~$${capUsd.toFixed(6)}`,
+    `  timeouts:      ${timedOutCount}/${withBudget.length}`,
+    `  runs:`,
+    ...lines,
+  ].join('\n');
+}
+
 export function summarize(traces: TraceRecord[]): string {
   if (traces.length === 0) return 'nim monitor — no traces yet.';
 
@@ -123,5 +149,6 @@ export function renderDashboard(traceFile: string, view: DashboardView = 'defaul
   const traces = parseTraces(readFileSync(traceFile, 'utf8'));
   if (view === 'savings') return summarizeSavings(traces);
   if (view === 'cache') return summarizeCache(traces);
+  if (view === 'budget') return summarizeBudget(traces);
   return summarize(traces);
 }

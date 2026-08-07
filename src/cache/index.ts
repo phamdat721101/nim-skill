@@ -17,7 +17,7 @@ import type { CacheBlock, CacheHelper, CacheAssembleMeta } from '../harness/type
 import { estimateTokensOf } from '../tokens.js';
 import { pickAdapter, parseUsage, type ParsedUsage, type CacheAdapter } from './adapters.js';
 
-export { computeRoi } from './roi.js';
+export { computeRoi, basePricePerToken } from './roi.js';
 export { pickAdapter, parseUsage } from './adapters.js';
 
 /** The runtime needs the recorded usage back; CacheHelper stays {assemble, record}. */

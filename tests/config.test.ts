@@ -23,6 +23,8 @@ describe('resolveConfig', () => {
       ratePerMin: 60,
       allowTools: ['*'],
       injection: 'strict',
+      taskBudget: { usd: 5, tokens: expect.any(Number) },
+      maxDurationMs: 300_000,
     });
   });
 
@@ -68,6 +70,44 @@ describe('resolveConfig', () => {
   it('throws on an invalid config (bad injection value)', () => {
     // @ts-expect-error deliberately invalid
     expect(() => resolveConfig({ guard: { injection: 'loose' } })).toThrow();
+  });
+
+  // ─── v0.8 nim-guard — per-task budget + duration cap (Task 1) ───────────
+
+  it('resolves a taskBudgetUsd-only guard config', () => {
+    const r = resolveConfig({ guard: { taskBudgetUsd: 2 } });
+    expect(r.guard?.taskBudget?.usd).toBe(2);
+    expect(r.guard?.taskBudget?.tokens).toBeGreaterThan(0);
+  });
+
+  it('resolves a taskBudgetTokens-only guard config, computing the usd equivalent', () => {
+    const r = resolveConfig({ guard: { taskBudgetTokens: 1_000_000 } });
+    expect(r.guard?.taskBudget?.tokens).toBe(1_000_000);
+    expect(r.guard?.taskBudget?.usd).toBeGreaterThan(0);
+  });
+
+  it('rejects a guard config with BOTH taskBudgetUsd and taskBudgetTokens set', () => {
+    expect(() => resolveConfig({ guard: { taskBudgetUsd: 5, taskBudgetTokens: 100 } })).toThrow(/mutually exclusive/);
+  });
+
+  it('defaults taskBudget to $5 when a guard block is present but neither budget field is set', () => {
+    const r = resolveConfig({ guard: { ratePerMin: 10 } });
+    expect(r.guard?.taskBudget?.usd).toBe(5);
+  });
+
+  it('defaults maxDurationMs to 300_000 (5 min) when a guard block is present', () => {
+    const r = resolveConfig({ guard: {} });
+    expect(r.guard?.maxDurationMs).toBe(300_000);
+  });
+
+  it('honors a custom maxDurationMs', () => {
+    const r = resolveConfig({ guard: { maxDurationMs: 60_000 } });
+    expect(r.guard?.maxDurationMs).toBe(60_000);
+  });
+
+  it('rollback contract: an absent guard block resolves to null exactly as before (no behavior change)', () => {
+    const r = resolveConfig({});
+    expect(r.guard).toBeNull();
   });
 });
 

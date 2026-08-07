@@ -16,8 +16,12 @@
                 "maxCostUsd": { "type": "number", "minimum": 0 },
                 "ratePerMin": { "type": "integer", "minimum": 1 },
                 "allowTools": { "type": "array", "items": { "type": "string" } },
-                "injection": { "enum": ["off", "strict"] }
+                "injection": { "enum": ["off", "strict"] },
+                "taskBudgetUsd": { "type": "number", "exclusiveMinimum": 0 },
+                "taskBudgetTokens": { "type": "integer", "exclusiveMinimum": 0 },
+                "maxDurationMs": { "type": "integer", "exclusiveMinimum": 0 }
               },
+              "not": { "required": ["taskBudgetUsd", "taskBudgetTokens"] },
               "additionalProperties": false
             }
           ]

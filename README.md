@@ -1,6 +1,6 @@
 # `nim-skill` — the harness your agent runs inside
 
-> **Status: ✅ P1 (reliability trio) + v0.2 token-efficiency + v0.3 `nim-cache` + v0.4 baseline/index/profile + v0.5 `nim-workspace`/`nim-lessons` + v0.6 `nim-workrule` implemented. 📝 v0.7 `nim-search` is docs-only, awaiting approval (`docs/prd/13-master-prd-v07-nim-search.md`).** `runHarnessed()` + `nim-guard` + `nim-error-handler` + `nim-monitor` + `nim-enforcer` + `nim-context` (see) + `nim-memory-lite` (remember) + isolation + token-ROI + `nim-cache` (provider-agnostic context caching) + `nim-baseline` (memory-file lint) + `nim-index` (tool-disclosure tax meter) + `nim-profile` (model-tier config resolver) + `nim-workspace` (hook-native Write/Edit gate) + `nim-lessons` (auto-captured lesson log) + `nim-workrule` (agent self-check + tracked-memory log) are built, tested (**249 tests**), and installable. Every new layer is config-gated + byte-identical when off.
+> **Status: ✅ P1 (reliability trio) + v0.2 token-efficiency + v0.3 `nim-cache` + v0.4 baseline/index/profile + v0.5 `nim-workspace`/`nim-lessons` + v0.6 `nim-workrule` + v0.8 `nim-guard` per-task budget/duration cap implemented. 📝 v0.7 `nim-search` is docs-only, awaiting approval (`docs/prd/13-master-prd-v07-nim-search.md`).** `runHarnessed()` + `nim-guard` + `nim-error-handler` + `nim-monitor` + `nim-enforcer` + `nim-context` (see) + `nim-memory-lite` (remember) + isolation + token-ROI + `nim-cache` (provider-agnostic context caching) + `nim-baseline` (memory-file lint) + `nim-index` (tool-disclosure tax meter) + `nim-profile` (model-tier config resolver) + `nim-workspace` (hook-native Write/Edit gate) + `nim-lessons` (auto-captured lesson log) + `nim-workrule` (agent self-check + tracked-memory log) are built, tested (**284 tests**), and installable. Every new layer is config-gated + byte-identical when off.
 > **License**: MIT · **Author**: PhamDat / @nxNim9 · **Siblings**: `goal-skill` (missions), HyperMove `/tools` (hosted registry).
 
 ## What it is
@@ -25,7 +25,7 @@ It works in **any agent host** (Claude Code, Cursor, Kiro, Hermes, OpenClaw, or 
 
 | Skill | Status | One line |
 |---|---|---|
-| **`nim-guard`** | ✅ P1 | Cost cap + rate limit + tool allowlist + agentjacking defense + input validation (Zod) — the safety substrate that makes the rest safe |
+| **`nim-guard`** | ✅ P1 + v0.8 | Cost cap + rate limit + tool allowlist + agentjacking defense + input validation (Zod) + per-task budget ($/token-credit, default $5) + per-task duration cap (cooperative, default 5 min) — the safety substrate that makes the rest safe |
 | **`nim-error-handler`** | ✅ P1 | Capture + classify (transient/permanent/critical) → retry-backoff / circuit-breaker / fallback / escalate + self-heal feedback |
 | **`nim-monitor`** | ✅ P1 | Trace every run (duration/status/verify/heal/error-class) → console / file (JSONL) / opt-in Sentry + local dashboard |
 | **`nim-enforcer`** | ✅ P1 | Verify output (nonempty/json/schema/math/test/lint/command) **before it ships**; fail → bounded self-heal; **unbypassable** |
@@ -59,7 +59,7 @@ Every layer is config-gated in `nim.json`; a disabled layer is a byte-identical 
 
 ```jsonc
 { "harness": {
-    "guard":        { "maxCostUsd": 0.5, "ratePerMin": 30, "allowTools": ["*"], "injection": "strict" },
+    "guard":        { "maxCostUsd": 0.5, "ratePerMin": 30, "allowTools": ["*"], "injection": "strict", "taskBudgetUsd": 5, "maxDurationMs": 300000 },
     "errorHandler": { "retries": 3, "backoff": "exp-jitter", "circuitBreaker": { "failN": 5, "cooldownMs": 60000 } },
     "enforcer":     { "strategies": [{ "kind": "schema", "required": ["id"] }], "maxHeals": 3, "strict": true, "healFeedback": "minimal" },
     "monitor":      { "exporters": ["console", "file"], "tokenAccounting": true },
@@ -68,6 +68,24 @@ Every layer is config-gated in `nim.json`; a disabled layer is a byte-identical 
     "execution":    { "isolate": true },
     "cache":        { "provider": "auto", "strategy": "prefix", "roi": true, "breakEvenReads": 2 } } }
 ```
+
+## Using `nim-skill` effectively
+
+A few practical rules that make the difference between "installed" and "actually reliable":
+
+**1. Turn on layers incrementally, not all at once.** Start with `guard` + `enforcer` — they're the two that change behavior on day one (input validation/injection defense, and a verify-gate that blocks unverified output). Add `errorHandler` once you've seen what actually fails in practice, then `monitor` to see the trend, then `cache`/`context`/`memory` once token cost is a real line item. Turning on everything at once makes it hard to tell which layer caught what.
+
+**2. Every layer is `false` or omitted by default — the "byte-identical-off" rollback contract is load-bearing, use it.** If a new layer misbehaves, delete its block from `nim.json` (or set it to `false`) and the harness returns to exactly its prior behavior — no partial state, no migration. This is the actual safety net for adopting a new primitive; don't route around it with feature flags of your own.
+
+**3. `guard`'s v0.8 per-task budget/duration cap default the moment the block exists.** If your `nim.json` already has ANY `guard: {...}` block — even just `{ "allowTools": ["*"] }` — it now also gets `taskBudgetUsd: 5` and `maxDurationMs: 300000` (5 min) by default, not only when you set them explicitly. This is intentional (see `docs/prd/14-master-prd-v08-nim-guard-budget.md`), but if you're upgrading an existing project, check whether $5/5-min is actually right for your workload — set explicit values if not, or drop the `guard` block entirely to opt out of every guard-layer default at once.
+
+**4. Prefer `taskBudgetUsd`/`taskBudgetTokens` for cost accountability per run, `maxCostUsd` for a rolling ceiling across an agent's whole session.** They're independent and both fire — a single expensive task can be denied for busting its own $5 budget even while nowhere near a session-wide cumulative cap, and vice versa. Don't try to use one to simulate the other.
+
+**5. `ctx.signal`/`ctx.budget` are cooperative, not preemptive — a skill has to actually check them.** If your `execute()` calls something abort-aware (`fetch`, most SDK clients), just pass `{ signal: ctx.signal }` through and you get the duration cap for free. If it's a tight synchronous loop or a blocking call (like `spawnSync`, which the built-in `nim-skill run` CLI command uses — a documented, known exception to this), you need to poll `ctx.signal.aborted` or `ctx.budget.timedOut()` periodically yourself, or the cap will report a timeout in the trace without actually stopping your code.
+
+**6. Use `nim-skill enforce "<verify-command>"` as an actual pre-commit/pre-ship gate, not just a demo.** It's designed to be unbypassable — wire it into a git hook or CI step so "did this pass verification" is answered by the harness, not by memory.
+
+**7. Check `nim-skill monitor --savings` / `--cache` / `--budget` before tuning, not after.** Each view answers a different question — token-ROI, cache break-even, and per-task budget consumption respectively — and all three read from the same local JSONL trace file, so there's no reason to guess at a config change's effect when the last N runs already have the answer.
 
 ## Install & use (P1 — implemented)
 
@@ -99,6 +117,7 @@ nim-skill enforce "npm test"                    # unbypassable verify-gate (exit
 nim-skill monitor                               # local trace dashboard
 nim-skill monitor --savings                     # U3 net-token savings view
 nim-skill monitor --cache                       # v0.3 cache-ROI + break-even view
+nim-skill monitor --budget                      # v0.8 per-task budget consumption + timeout view
 ```
 
 Library:

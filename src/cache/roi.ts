@@ -38,6 +38,16 @@ function priceFor(provider: string, overrides: Record<string, { base: number; ca
   return o ? { ...base, base: o.base, cachedRead: o.cachedRead } : base;
 }
 
+/**
+ * v0.8 nim-guard — the base $/token rate for a provider (or the generic
+ * fallback), reused (not duplicated) for taskBudgetUsd↔taskBudgetTokens
+ * conversion so the budget report and the cache-ROI report never drift out
+ * of sync with each other's pricing assumptions.
+ */
+export function basePricePerToken(provider: string, overrides: Record<string, { base: number; cachedRead: number }> = {}): number {
+  return priceFor(provider, overrides).base;
+}
+
 export interface RoiOpts {
   provider: CacheProvider;
   strategy: 'prefix' | 'explicit';

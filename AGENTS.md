@@ -28,7 +28,7 @@ Pipeline (each layer config-gated; disabled ⇒ byte-identical to a bare run):
 ## Layout
 
 - `src/harness/` — `runHarnessed()` core + shared types.
-- `src/guard/` — validate + injection (agentjacking) + policy (cost/rate/allowlist).
+- `src/guard/` — validate + injection (agentjacking) + policy (cost/rate/allowlist) + v0.8 per-task budget (`budget.ts`, `ctx.budget`) + duration cap (cooperative `ctx.signal`, wired in `harness/runtime.ts`; `cli.run`'s `spawnSync` does NOT honor it — documented gap).
 - `src/error-handler/` — classify + recover (retry/backoff/fallback/escalate) + circuit-breaker.
 - `src/monitor/` — wrap + capture + pluggable sinks (console/file/sentry) + dashboard + token-ROI (`roi.ts`).
 - `src/enforcer/` — output-enforcer verify-gate (nonempty/schema/math/json/test/lint/command) + compact heal-feedback.

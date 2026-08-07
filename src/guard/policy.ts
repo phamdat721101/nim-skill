@@ -33,6 +33,8 @@ export interface PolicyLimits {
   maxCostUsd: number;
   ratePerMin: number;
   allowTools: string[];
+  /** v0.8 — per-task budget cap in USD, reset every call (independent Map, NOT the cumulative `cost` map above). null ⇒ no per-task budget configured. */
+  taskBudgetUsd?: number | null;
 }
 
 /** Holds bounded per-agent counters. One instance per guard (no globals). */
@@ -48,13 +50,26 @@ export class PolicyEnforcer {
   }
 
   /** Returns a deny reason, or null when the call is allowed. */
-  check(agentId: string, tool?: string, costUsd = 0): string | null {
+  check(agentId: string, tool?: string, costUsd = 0, taskCostUsd = 0): string | null {
     if (!this.allowAll && tool !== undefined && !this.allow.has(tool)) {
       return `tool_not_allowed: '${tool}'`;
     }
     if (this.exceedsRate(agentId)) return 'rate_limited';
     if (this.exceedsCost(agentId, costUsd)) return 'cost_cap_exceeded';
+    if (this.exceedsTaskBudget(taskCostUsd)) return 'task_budget_exceeded';
     return null;
+  }
+
+  /**
+   * v0.8 — pre-flight per-task budget check. Deliberately NOT cumulative:
+   * a single estimated `costUsd` compared directly against the per-task cap,
+   * with no state carried between calls (orthogonal to `exceedsCost`'s
+   * rolling window — decision 4: both checks fire independently).
+   */
+  private exceedsTaskBudget(costUsd: number): boolean {
+    const cap = this.limits.taskBudgetUsd;
+    if (cap === undefined || cap === null || !Number.isFinite(cap)) return false;
+    return costUsd > cap;
   }
 
   private exceedsRate(agentId: string): boolean {

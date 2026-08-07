@@ -12,6 +12,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 import { deriveOffStackByPath } from './workspace/rules.js';
+import { basePricePerToken } from './cache/roi.js';
 import type {
   HarnessConfig,
   GuardConfig,
@@ -47,12 +48,20 @@ const verifyStrategySchema: z.ZodType<VerifyStrategy> = z.union([
 
 const strategyName = z.enum(['nonempty', 'json', 'schema', 'math', 'test', 'lint', 'command']);
 
-const guardSchema = z.object({
-  maxCostUsd: z.number().nonnegative().optional(),
-  ratePerMin: z.number().int().positive().optional(),
-  allowTools: z.array(z.string()).optional(),
-  injection: z.enum(['off', 'strict']).optional(),
-});
+const guardSchema = z
+  .object({
+    maxCostUsd: z.number().nonnegative().optional(),
+    ratePerMin: z.number().int().positive().optional(),
+    allowTools: z.array(z.string()).optional(),
+    injection: z.enum(['off', 'strict']).optional(),
+    taskBudgetUsd: z.number().positive().optional(),
+    taskBudgetTokens: z.number().int().positive().optional(),
+    maxDurationMs: z.number().int().positive().optional(),
+  })
+  .refine((c) => !(c.taskBudgetUsd !== undefined && c.taskBudgetTokens !== undefined), {
+    message: 'guard: taskBudgetUsd and taskBudgetTokens are mutually exclusive — set at most one',
+    path: ['taskBudgetTokens'],
+  });
 
 const circuitBreakerSchema = z.object({
   failN: z.number().int().positive().optional(),
@@ -269,6 +278,10 @@ export interface ResolvedGuard {
   ratePerMin: number;
   allowTools: string[];
   injection: 'off' | 'strict';
+  /** v0.8 — resolved per-task budget, always normalized to BOTH units (decision 6) via the shared cache pricing table. null when no cap was configured (Infinity-equivalent). */
+  taskBudget: { usd: number; tokens: number } | null;
+  /** v0.8 — resolved wall-clock duration cap in ms. null when disabled (no timer installed). */
+  maxDurationMs: number | null;
 }
 
 export interface ResolvedErrorHandler {
@@ -350,11 +363,21 @@ function normalizeStrategy(s: VerifyStrategy | string): VerifyStrategy {
 }
 
 function resolveGuard(c: GuardConfig): ResolvedGuard {
+  const rate = c.taskBudgetTokens === undefined && c.taskBudgetUsd === undefined ? 5 : c.taskBudgetUsd;
+  const provider = basePricePerToken('anthropic'); // generic reference rate; only used for USD<->token reporting, never billed
+  const taskBudget =
+    c.taskBudgetTokens !== undefined
+      ? { usd: Number((c.taskBudgetTokens * provider).toFixed(6)), tokens: c.taskBudgetTokens }
+      : rate !== undefined
+        ? { usd: rate, tokens: Math.round(rate / provider) }
+        : null;
   return {
     maxCostUsd: c.maxCostUsd ?? Infinity,
     ratePerMin: c.ratePerMin ?? 60,
     allowTools: c.allowTools ?? ['*'],
     injection: c.injection ?? 'strict',
+    taskBudget,
+    maxDurationMs: c.maxDurationMs ?? 300_000,
   };
 }
 

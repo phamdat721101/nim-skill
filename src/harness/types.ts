@@ -42,7 +42,7 @@ export interface VerifyResult<T = Record<string, unknown>> {
 
 // ─── Error handler ───────────────────────────────────────────────────────────
 
-export type ErrorClass = 'transient' | 'permanent' | 'critical';
+export type ErrorClass = 'transient' | 'permanent' | 'critical' | 'timeout';
 
 export interface ClassifiedError {
   class: ErrorClass;
@@ -85,6 +85,21 @@ export interface LessonsMatchTrace {
   severity: 'info' | 'warning' | 'critical' | null;
 }
 
+/**
+ * v0.8 nim-guard — per-task budget consumption report. Populated only when
+ * `guard.taskBudgetUsd` or `guard.taskBudgetTokens` is configured (additive,
+ * optional, same precedent as `cache`/`disclosure`/`lessonsMatch`). Always
+ * reports BOTH units (decision 6: single field configured, both reported),
+ * converted via the same pricing table `nim-cache` already uses.
+ */
+export interface BudgetTrace {
+  capUsd: number;
+  spentUsd: number;
+  capTokensEquivalent: number;
+  spentTokensEquivalent: number;
+  timedOut: boolean;
+}
+
 export interface TraceRecord {
   skill: string;
   traceId: string;
@@ -109,6 +124,8 @@ export interface TraceRecord {
   profileTier?: 'frontier' | 'open-weight-verified' | 'open-weight-untested';
   /** v0.5 nim-lessons — set only when harness.lessons is configured AND a match/capture occurred this run. */
   lessonsMatch?: LessonsMatchTrace;
+  /** v0.8 nim-guard — set only when guard.taskBudgetUsd/taskBudgetTokens is configured. */
+  budget?: BudgetTrace;
 }
 
 // ─── Config vocabulary (nim.json → harness) ──────────────────────────────────
@@ -118,6 +135,18 @@ export interface GuardConfig {
   ratePerMin?: number;
   allowTools?: string[];
   injection?: 'off' | 'strict';
+  /**
+   * v0.8 — per-task budget cap in USD, reset every `runHarnessed()` call
+   * (orthogonal to the cumulative/rolling `maxCostUsd` above — both can
+   * independently deny a run). Mutually exclusive with `taskBudgetTokens`.
+   * Defaults to 5 (USD) when the guard block is present and neither budget
+   * field is set.
+   */
+  taskBudgetUsd?: number;
+  /** v0.8 — per-task budget cap expressed as a token-credit count instead of USD. Mutually exclusive with `taskBudgetUsd`. */
+  taskBudgetTokens?: number;
+  /** v0.8 — wall-clock duration cap in ms for one `runHarnessed()` call. Cooperative cancellation via `ctx.signal` (never a hard/preemptive kill). Defaults to 300_000 (5 min). */
+  maxDurationMs?: number;
 }
 
 export interface CircuitBreakerConfig {
@@ -241,6 +270,25 @@ export interface LessonsHelper {
   capture(entry: Omit<Lesson, 'id' | 'capturedAt'>): Lesson;
 }
 
+/**
+ * v0.8 `nim-guard` — the per-run task-budget helper injected as `ctx.budget`
+ * ONLY when `guard.taskBudgetUsd`/`guard.taskBudgetTokens` is configured
+ * (opt-in instrumentation, byte-identical-off otherwise). `spend()` lets a
+ * skill report live/actual spend as it happens (e.g. one call per LLM
+ * request inside `execute()`); the harness checks the running total against
+ * the same per-task cap the pre-flight estimate used. `timedOut()` is a
+ * convenience boolean mirror of `ctx.signal.aborted` (decision 8 — both a
+ * real AbortSignal AND this getter are provided, not one or the other).
+ */
+export interface BudgetHelper {
+  /** Report actual spend so far. Throws BudgetExceededError once the running total crosses the per-task cap. */
+  spend(amount: { usd?: number; tokens?: number }): void;
+  /** Convenience mirror of `ctx.signal.aborted` — true once the duration cap has fired. */
+  timedOut(): boolean;
+  /** Current accumulated spend, in USD (converted via the shared pricing table when tracked in tokens). */
+  spentUsd(): number;
+}
+
 /** Declarative harness config — the `harness` block of nim.json / a skill. */
 export interface HarnessConfig {
   guard?: GuardConfig | false;
@@ -270,6 +318,14 @@ export interface SkillContext {
   context?: ContextHelper;
   memory?: MemoryHelper;
   lessons?: LessonsHelper;
+  /** v0.8 nim-guard — opt-in live spend accumulation, injected only when a per-task budget is configured. */
+  budget?: BudgetHelper;
+  /**
+   * v0.8 nim-guard — a real AbortSignal, injected only when `guard.maxDurationMs`
+   * is configured. Fires (`.aborted === true`) once the wall-clock cap elapses.
+   * Cooperative: nothing forcibly stops a skill that never checks/awaits it.
+   */
+  signal?: AbortSignal;
   [key: string]: unknown;
 }
 

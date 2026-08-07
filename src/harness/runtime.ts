@@ -33,6 +33,7 @@ import {
   type ResolvedHarnessConfig,
 } from '../config.js';
 import { createGuard } from '../guard/guard.js';
+import { basePricePerToken } from '../cache/roi.js';
 import { run, createBreaker } from '../error-handler/recover.js';
 import { classify } from '../error-handler/classify.js';
 import { createMonitor } from '../monitor/capture.js';
@@ -43,6 +44,7 @@ import { createContextHelper } from '../context/index.js';
 import { createMemoryHelper, verifyKey } from '../memory/index.js';
 import { createCacheHelper, computeRoi } from '../cache/index.js';
 import { createLessonsHelper } from '../lessons/index.js';
+import { createBudgetHelper } from '../guard/budget.js';
 import { estimateTokensOf } from '../tokens.js';
 
 type Dict = Record<string, unknown>;
@@ -72,6 +74,50 @@ async function execute<O extends Dict>(
   });
   if (res.ok) return res.value;
   throw new HarnessExecutionError(res.error);
+}
+
+/** Thrown when the v0.8 duration cap (`guard.maxDurationMs`) elapses. Classified as ErrorClass 'timeout'. */
+export class TimeoutError extends Error {
+  readonly class = 'timeout' as const;
+  constructor(maxDurationMs: number) {
+    super(`execution exceeded the ${maxDurationMs}ms duration cap`);
+    this.name = 'TimeoutError';
+  }
+}
+
+/**
+ * v0.8 — race `execute()` against a timer that fires at `maxDurationMs`.
+ * Cooperative cancellation only (decision 3): the AbortController's signal is
+ * exposed to the skill via `ctx.signal`, but a skill that never checks/awaits
+ * it keeps running past the cap — this race only changes what runHarnessed()
+ * itself observes and reports, never forcibly kills in-flight work. The timer
+ * is ALWAYS cleared (success, error, or timeout) so no handle leaks across
+ * repeated runs.
+ */
+async function executeWithTimeout<O extends Dict>(
+  skill: SkillDef<Dict, O>,
+  input: Dict,
+  ctx: SkillContext,
+  eh: ResolvedErrorHandler | null,
+  maxDurationMs: number | null,
+  controller: AbortController | null,
+  onEscalate?: (e: ClassifiedError) => void,
+): Promise<O> {
+  if (!maxDurationMs || !controller) return execute<O>(skill, input, ctx, eh, onEscalate);
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new TimeoutError(maxDurationMs));
+    }, maxDurationMs);
+  });
+
+  try {
+    return await Promise.race([execute<O>(skill, input, ctx, eh, onEscalate), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 type Enforced<O> = { verified: boolean; heals: number; checks: HarnessResult['checks']; output: O };
@@ -107,13 +153,21 @@ async function enforceWithMemory<O extends Dict>(
 }
 
 /** Build the run ctx, injecting only the helpers whose layer is enabled. */
-function buildRunCtx(ctx: SkillContext, cfg: ResolvedHarnessConfig): {
+function buildRunCtx(
+  ctx: SkillContext,
+  cfg: ResolvedHarnessConfig,
+  isTimedOut: () => boolean = () => false,
+): {
   runCtx: SkillContext;
   getCacheUsage: () => ReturnType<ReturnType<typeof createCacheHelper>['getRecorded']>;
   getLessonsMatch: () => LessonsMatchTrace | undefined;
+  getBudgetSpentUsd: () => number | undefined;
 } {
-  const enabled = cfg.cache || cfg.context || cfg.memory || cfg.execution?.isolate || cfg.lessons;
-  if (!enabled) return { runCtx: ctx, getCacheUsage: () => null, getLessonsMatch: () => undefined };
+  const hasBudget = !!cfg.guard?.taskBudget;
+  const enabled = cfg.cache || cfg.context || cfg.memory || cfg.execution?.isolate || cfg.lessons || hasBudget;
+  if (!enabled) {
+    return { runCtx: ctx, getCacheUsage: () => null, getLessonsMatch: () => undefined, getBudgetSpentUsd: () => undefined };
+  }
 
   // Isolation (U2): a cloned ctx keeps intermediate/retry state out of the caller's ctx.
   const runCtx: SkillContext = { ...ctx };
@@ -121,6 +175,15 @@ function buildRunCtx(ctx: SkillContext, cfg: ResolvedHarnessConfig): {
   if (cfg.cache) runCtx.cache = cacheHandle.helper;
   if (cfg.context) runCtx.context = createContextHelper(cfg.context);
   if (cfg.memory) runCtx.memory = createMemoryHelper(cfg.memory);
+
+  // v0.8 nim-guard — ctx.budget: opt-in live spend accumulation against the
+  // SAME per-task cap Task 2's pre-flight check used. Injected only when a
+  // task budget is configured (byte-identical-off otherwise).
+  let budgetHelper: ReturnType<typeof createBudgetHelper> | undefined;
+  if (hasBudget && cfg.guard?.taskBudget) {
+    budgetHelper = createBudgetHelper(cfg.guard.taskBudget.usd, isTimedOut);
+    runCtx.budget = budgetHelper;
+  }
 
   // v0.5 nim-lessons — track captured/matched lesson ids this run so the trace can
   // report them additively, mirroring how cacheHandle.getRecorded() feeds cacheTrace.
@@ -149,6 +212,7 @@ function buildRunCtx(ctx: SkillContext, cfg: ResolvedHarnessConfig): {
     runCtx,
     getCacheUsage: () => cacheHandle.getRecorded(),
     getLessonsMatch: () => (seen.ids.length ? { matchedLessonIds: [...seen.ids], severity: seen.severity } : undefined),
+    getBudgetSpentUsd: () => budgetHelper?.spentUsd(),
   };
 }
 
@@ -167,7 +231,16 @@ export async function runHarnessed<O extends Dict = Dict>(
   const monitor = createMonitor(cfg.monitor);
   const traceId = newTraceId();
   const startedAt = Date.now();
-  const { runCtx, getCacheUsage, getLessonsMatch } = buildRunCtx(ctx, cfg);
+
+  // v0.8 — the AbortController backing ctx.signal + ctx.budget.timedOut(),
+  // created only when guard.maxDurationMs is configured (byte-identical-off
+  // otherwise — no timer, no controller, no new ctx field at all).
+  const maxDurationMs = cfg.guard?.maxDurationMs ?? null;
+  const controller = maxDurationMs ? new AbortController() : null;
+  const isTimedOut = () => controller?.signal.aborted ?? false;
+
+  const { runCtx, getCacheUsage, getLessonsMatch, getBudgetSpentUsd } = buildRunCtx(ctx, cfg, isTimedOut);
+  if (controller) runCtx.signal = controller.signal;
 
   const accounting = !!(cfg.monitor?.tokenAccounting || cfg.context);
   const roiFields = (status: RunStatus, errorClass: ErrorClass | undefined, verified: boolean, heals: number, out: unknown): Partial<TraceFields> => {
@@ -183,25 +256,54 @@ export async function runHarnessed<O extends Dict = Dict>(
   };
   const dur = () => Date.now() - startedAt;
 
+  // v0.8 nim-guard — build the BudgetTrace only when a per-task budget is
+  // configured (additive/optional, same precedent as cache/disclosure/
+  // lessonsMatch). Always reports BOTH units (decision 6), using the
+  // resolved cap (Task 1/2) + whatever ctx.budget.spend() accumulated
+  // (Task 3) + the AbortController's final state (Task 4).
+  const provider = basePricePerToken('anthropic');
+  const budgetTrace = (): TraceRecord['budget'] => {
+    const cap = cfg.guard?.taskBudget;
+    if (!cap) return undefined;
+    const spentUsd = getBudgetSpentUsd() ?? 0;
+    return {
+      capUsd: cap.usd,
+      spentUsd,
+      capTokensEquivalent: cap.tokens,
+      spentTokensEquivalent: Math.round(spentUsd / provider),
+      timedOut: isTimedOut(),
+    };
+  };
+
   // ①② guard + ②b context budget — a breach captures a 'denied' trace and rethrows.
   let validated: Dict;
   try {
     const guard = createGuard(cfg.guard);
     validated = guard.validate(input);
-    guard.checkPolicy({ agentId: ctx.agentId, tool: skill.name });
+    // v0.8 — pre-flight per-task budget estimate: approximate cost of the
+    // validated input against the resolved per-task cap (decision 5a). This
+    // is a cheap, input-size-only estimate; ctx.budget.spend() (Task 3) adds
+    // live/actual accumulation on top for skills that opt in. Deliberately
+    // passed as `taskCostUsd`, NOT `costUsd` — orthogonal to the existing
+    // cumulative maxCostUsd check (decision 4), which keeps its v0.1-v0.7
+    // default-0 behavior unchanged at this call site.
+    const preflightCostUsd = cfg.guard?.taskBudget
+      ? estimateTokensOf(validated) * basePricePerToken('anthropic')
+      : 0;
+    guard.checkPolicy({ agentId: ctx.agentId, tool: skill.name, taskCostUsd: preflightCostUsd });
     if (runCtx.context) runCtx.context.budget(estimateTokensOf(validated));
   } catch (err) {
-    emit({ status: 'denied', durationMs: dur(), ...roiFields('denied', undefined, false, 0, undefined) });
+    emit({ status: 'denied', durationMs: dur(), ...roiFields('denied', undefined, false, 0, undefined), ...(budgetTrace() ? { budget: budgetTrace() } : {}) });
     throw err;
   }
 
-  // ③ execute (+ error-handler)
+  // ③ execute (+ error-handler, + v0.8 cooperative duration cap)
   let output: O;
   try {
-    output = await execute<O>(skill, validated, runCtx, cfg.errorHandler);
+    output = await executeWithTimeout<O>(skill, validated, runCtx, cfg.errorHandler, maxDurationMs, controller);
   } catch (err) {
     const cls = err instanceof HarnessExecutionError ? err.error.class : classify(err).class;
-    const trace = emit({ status: 'error', durationMs: dur(), errorClass: cls, ...roiFields('error', cls, false, 0, undefined) });
+    const trace = emit({ status: 'error', durationMs: dur(), errorClass: cls, ...roiFields('error', cls, false, 0, undefined), ...(budgetTrace() ? { budget: budgetTrace() } : {}) });
     if (err instanceof HarnessExecutionError) {
       err.trace = trace;
       throw err;
@@ -229,6 +331,7 @@ export async function runHarnessed<O extends Dict = Dict>(
 
   // ⑤ success trace + envelope
   const lessonsMatch = getLessonsMatch();
+  const budget = budgetTrace();
   const trace = emit({
     status: 'success',
     durationMs: dur(),
@@ -236,6 +339,7 @@ export async function runHarnessed<O extends Dict = Dict>(
     ...roiFields('success', undefined, enforced.verified, enforced.heals, enforced.output),
     ...(cacheTrace ? { cache: cacheTrace } : {}),
     ...(lessonsMatch ? { lessonsMatch } : {}),
+    ...(budget ? { budget } : {}),
   });
 
   return {

@@ -20,7 +20,8 @@ export type GuardReason =
   | 'prompt_injection'
   | 'tool_not_allowed'
   | 'rate_limited'
-  | 'cost_cap_exceeded';
+  | 'cost_cap_exceeded'
+  | 'task_budget_exceeded';
 
 export class GuardError extends Error {
   constructor(readonly reason: GuardReason, message?: string) {
@@ -32,7 +33,10 @@ export class GuardError extends Error {
 export interface GuardPolicyContext {
   agentId: string;
   tool?: string;
+  /** Fed into the existing CUMULATIVE/rolling maxCostUsd window (unchanged v0.1-v0.7 semantics). */
   costUsd?: number;
+  /** v0.8 — fed into the per-task (non-cumulative, resets every call) taskBudgetUsd check. Independent of `costUsd` (decision 4). */
+  taskCostUsd?: number;
 }
 
 export interface Guard {
@@ -50,6 +54,7 @@ class ActiveGuard implements Guard {
       maxCostUsd: cfg.maxCostUsd,
       ratePerMin: cfg.ratePerMin,
       allowTools: cfg.allowTools,
+      taskBudgetUsd: cfg.taskBudget?.usd ?? null,
     });
   }
 
@@ -69,7 +74,7 @@ class ActiveGuard implements Guard {
   }
 
   checkPolicy(ctx: GuardPolicyContext): void {
-    const reason = this.policy.check(ctx.agentId, ctx.tool, ctx.costUsd ?? 0);
+    const reason = this.policy.check(ctx.agentId, ctx.tool, ctx.costUsd ?? 0, ctx.taskCostUsd ?? 0);
     if (reason) {
       const code = reason.startsWith('tool_not_allowed')
         ? 'tool_not_allowed'
