@@ -28,7 +28,7 @@ Pipeline (each layer config-gated; disabled ⇒ byte-identical to a bare run):
 ## Layout
 
 - `src/harness/` — `runHarnessed()` core + shared types.
-- `src/guard/` — validate + injection (agentjacking) + policy (cost/rate/allowlist) + v0.8 per-task budget (`budget.ts`, `ctx.budget`) + duration cap (cooperative `ctx.signal`, wired in `harness/runtime.ts`; `cli.run`'s `spawnSync` does NOT honor it — documented gap).
+- `src/guard/` — validate + injection (agentjacking) + policy (cost/rate/allowlist) + v0.8 per-task budget (`budget.ts`, `ctx.budget`) + duration cap (cooperative `ctx.signal`, wired in `harness/runtime.ts`; `cli.run`'s `spawnSync` does NOT honor it — documented gap) + v0.9 `nim-propose` (`propose.ts` — pre-execute deny gate requiring an approved plan; `owner-profile.ts` — the "learn the owner" JSONL store + advisory scaffold pre-fill).
 - `src/error-handler/` — classify + recover (retry/backoff/fallback/escalate) + circuit-breaker.
 - `src/monitor/` — wrap + capture + pluggable sinks (console/file/sentry) + dashboard + token-ROI (`roi.ts`).
 - `src/enforcer/` — output-enforcer verify-gate (nonempty/schema/math/json/test/lint/command) + compact heal-feedback.
@@ -41,6 +41,7 @@ Pipeline (each layer config-gated; disabled ⇒ byte-identical to a bare run):
 - `src/workspace/` — v0.5 nim-workspace: hook-native existence + identity + subject-matter + staleness gate (CLI-only + hook adapters, no `ctx` helper — runs OUTSIDE `runHarnessed()`).
 - `src/lessons/` — v0.5 nim-lessons: auto-captured, queryable error/lesson log (`ctx.lessons` helper + CLI hook-native path).
 - `src/workrule/` — v0.6 nim-workrule: the 6-rule self-check checklist + `.nim/agent-support-log.md` tracked-memory log (CLI-only, no `ctx` helper — a session-boundary self-check, same category as `nim-baseline`).
+- `src/logcompact/` — v0.9 nim-logcompact: compresses raw subprocess/tool output before it reaches an agent's context (`ctx.logCompact` helper + `cli.run --logcompact`; cap/errors-only/incremental strategies).
 - `src/hook-adapters/` — per-host `PreToolUse` decision-shape adapters (Claude Code / Kiro CLI) shared by `nim-workspace` and `nim-lessons`.
 - `src/serialize/` — U5b terminal-only token-optimized serialization (guardrailed).
 - `src/tokens.ts` — single shared approximate token estimator.

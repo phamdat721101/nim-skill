@@ -24,7 +24,7 @@ export function parseTraces(jsonl: string): TraceRecord[] {
     .filter((t): t is TraceRecord => t !== null);
 }
 
-export type DashboardView = 'default' | 'savings' | 'cache' | 'budget';
+export type DashboardView = 'default' | 'savings' | 'cache' | 'budget' | 'logcompact' | 'propose';
 
 const pctOf = (a: number, b: number): string => (b === 0 ? 'n/a' : `${Math.round((a / b) * 100)}%`);
 
@@ -101,6 +101,49 @@ export function summarizeBudget(traces: TraceRecord[]): string {
   ].join('\n');
 }
 
+/** v0.9 nim-logcompact — aggregate char reduction across recent runs. */
+export function summarizeLogCompact(traces: TraceRecord[]): string {
+  const withLogCompact = traces.filter((t) => t.logCompact !== undefined);
+  if (withLogCompact.length === 0) return 'nim monitor (logcompact) — no logCompact traces yet (enable harness.logCompact or run with --logcompact).';
+  let originalChars = 0;
+  let compactedChars = 0;
+  let pctSum = 0;
+  for (const t of withLogCompact) {
+    const lc = t.logCompact!;
+    originalChars += lc.originalChars;
+    compactedChars += lc.compactedChars;
+    pctSum += lc.reductionPct;
+  }
+  const avgReduction = Math.round(pctSum / withLogCompact.length);
+  return [
+    `nim monitor (logcompact) — ${withLogCompact.length} run(s) with output compaction`,
+    `  original chars:  ${originalChars}`,
+    `  compacted chars: ${compactedChars}`,
+    `  avg reduction:   ${avgReduction}%`,
+  ].join('\n');
+}
+
+/** v0.9 nim-propose — approval-gate aggregate: how many runs required a proposal, how many were approved vs denied, and the deny-reason breakdown. */
+export function summarizeProposal(traces: TraceRecord[]): string {
+  const withProposal = traces.filter((t) => t.proposal !== undefined);
+  if (withProposal.length === 0) return 'nim monitor (propose) — no proposal traces yet (enable guard.propose.require).';
+  let approved = 0;
+  const reasonCounts = new Map<string, number>();
+  for (const t of withProposal) {
+    const p = t.proposal!;
+    if (p.approved) approved += 1;
+    else if (p.reason) reasonCounts.set(p.reason, (reasonCounts.get(p.reason) ?? 0) + 1);
+  }
+  const denied = withProposal.length - approved;
+  const reasonLine = reasonCounts.size ? [...reasonCounts].map(([k, v]) => `${k}=${v}`).join(' ') : 'none';
+  return [
+    `nim monitor (propose) — ${withProposal.length} run(s) with a proposal gate configured`,
+    `  approved: ${approved}/${withProposal.length}`,
+    `  denied:   ${denied}/${withProposal.length}`,
+    `  deny reasons: ${reasonLine}`,
+  ].join('\n');
+}
+
 export function summarize(traces: TraceRecord[]): string {
   if (traces.length === 0) return 'nim monitor — no traces yet.';
 
@@ -150,5 +193,7 @@ export function renderDashboard(traceFile: string, view: DashboardView = 'defaul
   if (view === 'savings') return summarizeSavings(traces);
   if (view === 'cache') return summarizeCache(traces);
   if (view === 'budget') return summarizeBudget(traces);
+  if (view === 'logcompact') return summarizeLogCompact(traces);
+  if (view === 'propose') return summarizeProposal(traces);
   return summarize(traces);
 }

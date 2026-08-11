@@ -124,6 +124,10 @@ export interface TraceRecord {
   profileTier?: 'frontier' | 'open-weight-verified' | 'open-weight-untested';
   /** v0.5 nim-lessons — set only when harness.lessons is configured AND a match/capture occurred this run. */
   lessonsMatch?: LessonsMatchTrace;
+  /** v0.9 nim-logcompact — set only when harness.logCompact is configured AND ctx.logCompact.compact() was called this run. */
+  logCompact?: LogCompactResult;
+  /** v0.9 nim-propose — set only when guard.propose.require is configured (populated on both the deny path and the allowed/success path). */
+  proposal?: ProposalTrace;
   /** v0.8 nim-guard — set only when guard.taskBudgetUsd/taskBudgetTokens is configured. */
   budget?: BudgetTrace;
 }
@@ -147,6 +151,25 @@ export interface GuardConfig {
   taskBudgetTokens?: number;
   /** v0.8 — wall-clock duration cap in ms for one `runHarnessed()` call. Cooperative cancellation via `ctx.signal` (never a hard/preemptive kill). Defaults to 300_000 (5 min). */
   maxDurationMs?: number;
+  /**
+   * v0.9 `nim-propose` — pre-execute deny gate requiring an explicit,
+   * approved plan artifact before a task runs. Extends `nim-guard` directly
+   * (same precedent as `taskBudgetUsd`/`maxDurationMs` above) rather than a
+   * new sibling primitive: "did a human approve a plan first" is a
+   * policy-shaped concern identical in kind to the existing cost/rate/budget
+   * checks. Absent/`require:false` ⇒ no proposal check at all (rollback
+   * contract, byte-identical to pre-v0.9 behavior).
+   */
+  propose?: ProposeConfig;
+}
+
+export interface ProposeConfig {
+  /** When true, `checkPolicy()` denies unless an approved, non-expired plan exists for the task description. Default false. */
+  require?: boolean;
+  /** How stale an approval may be before it's treated as expired. Default 24h. */
+  approvalTtlMs?: number;
+  /** Where plan artifacts live. Default `.nim/proposals`. */
+  proposalsDir?: string;
 }
 
 export interface CircuitBreakerConfig {
@@ -229,6 +252,18 @@ export interface LessonsConfig {
   ttlMs?: number;
 }
 
+/**
+ * v0.9 `nim-logcompact` — compresses raw subprocess/tool output (stdout/
+ * stderr, log tails) before it reaches an agent's context. Nested under
+ * `harness` (same category as `cache`/`context`/`memory`/`lessons`): a
+ * per-`runHarnessed()`-call concern, not a build-time/hook-native one.
+ */
+export interface LogCompactConfig {
+  maxLines?: number;
+  strategy?: 'cap' | 'errors-only' | 'incremental';
+  escalateOnEmpty?: boolean;
+}
+
 // ─── Injected ctx helpers (interfaces here; implementations in their modules) ─
 
 export interface CacheBlock {
@@ -270,6 +305,25 @@ export interface LessonsHelper {
   capture(entry: Omit<Lesson, 'id' | 'capturedAt'>): Lesson;
 }
 
+/** v0.9 `nim-logcompact` — opt-in per-call helper, injected only when `harness.logCompact` is configured. */
+export interface LogCompactResult {
+  text: string;
+  originalChars: number;
+  compactedChars: number;
+  reductionPct: number;
+}
+
+export interface LogCompactHelper {
+  compact(raw: string): LogCompactResult;
+}
+
+/** v0.9 `nim-propose` — set only when `guard.propose.require` is configured. Reports whether a proposal was required and whether it was found approved. */
+export interface ProposalTrace {
+  required: boolean;
+  approved: boolean;
+  reason?: 'no_proposal' | 'not_approved' | 'approval_expired';
+}
+
 /**
  * v0.8 `nim-guard` — the per-run task-budget helper injected as `ctx.budget`
  * ONLY when `guard.taskBudgetUsd`/`guard.taskBudgetTokens` is configured
@@ -300,6 +354,7 @@ export interface HarnessConfig {
   execution?: ExecutionConfig | false;
   cache?: CacheConfig | false;
   lessons?: LessonsConfig | false;
+  logCompact?: LogCompactConfig | false;
 }
 
 // ─── Skill definition ─────────────────────────────────────────────────────
@@ -318,6 +373,8 @@ export interface SkillContext {
   context?: ContextHelper;
   memory?: MemoryHelper;
   lessons?: LessonsHelper;
+  /** v0.9 nim-logcompact — opt-in, injected only when harness.logCompact is configured. */
+  logCompact?: LogCompactHelper;
   /** v0.8 nim-guard — opt-in live spend accumulation, injected only when a per-task budget is configured. */
   budget?: BudgetHelper;
   /**

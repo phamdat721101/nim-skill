@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { summarizeSavings, summarizeCache, summarizeBudget } from '../src/monitor/dashboard.js';
+import { summarizeSavings, summarizeCache, summarizeBudget, summarizeLogCompact, summarizeProposal } from '../src/monitor/dashboard.js';
 import type { TraceRecord } from '../src/harness/types.js';
 
 const base = (over: Partial<TraceRecord>): TraceRecord => ({
@@ -39,6 +39,40 @@ describe('dashboard --cache view', () => {
     ]);
     expect(out).toMatch(/hit-rate:/);
     expect(out).toMatch(/break-even/);
+  });
+});
+
+describe('dashboard --logcompact view (v0.9 nim-logcompact)', () => {
+  it('reports no data when no logCompact traces', () => {
+    expect(summarizeLogCompact([base({})])).toMatch(/no logCompact traces/);
+  });
+
+  it('aggregates original/compacted chars and average reduction%', () => {
+    const out = summarizeLogCompact([
+      base({ logCompact: { originalChars: 1000, compactedChars: 100, reductionPct: 90 } }),
+      base({ logCompact: { originalChars: 2000, compactedChars: 400, reductionPct: 80 } }),
+    ]);
+    expect(out).toMatch(/original chars:\s+3000/);
+    expect(out).toMatch(/compacted chars:\s+500/);
+    expect(out).toMatch(/avg reduction:\s+85%/);
+  });
+});
+
+describe('dashboard --propose view (v0.9 nim-propose)', () => {
+  it('reports no data when no proposal traces', () => {
+    expect(summarizeProposal([base({})])).toMatch(/no proposal traces/);
+  });
+
+  it('aggregates approved vs denied counts and deny-reason breakdown', () => {
+    const out = summarizeProposal([
+      base({ proposal: { required: true, approved: true } }),
+      base({ proposal: { required: true, approved: false, reason: 'no_proposal' } }),
+      base({ proposal: { required: true, approved: false, reason: 'approval_expired' } }),
+    ]);
+    expect(out).toMatch(/approved:\s+1\/3/);
+    expect(out).toMatch(/denied:\s+2\/3/);
+    expect(out).toMatch(/no_proposal=1/);
+    expect(out).toMatch(/approval_expired=1/);
   });
 });
 

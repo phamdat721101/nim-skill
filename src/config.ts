@@ -25,6 +25,7 @@ import type {
   CacheConfig,
   CacheProvider,
   LessonsConfig,
+  LogCompactConfig,
   VerifyStrategy,
   EnforceMode,
 } from './harness/types.js';
@@ -48,6 +49,12 @@ const verifyStrategySchema: z.ZodType<VerifyStrategy> = z.union([
 
 const strategyName = z.enum(['nonempty', 'json', 'schema', 'math', 'test', 'lint', 'command']);
 
+const proposeSchema = z.object({
+  require: z.boolean().optional(),
+  approvalTtlMs: z.number().int().positive().optional(),
+  proposalsDir: z.string().optional(),
+});
+
 const guardSchema = z
   .object({
     maxCostUsd: z.number().nonnegative().optional(),
@@ -57,6 +64,7 @@ const guardSchema = z
     taskBudgetUsd: z.number().positive().optional(),
     taskBudgetTokens: z.number().int().positive().optional(),
     maxDurationMs: z.number().int().positive().optional(),
+    propose: proposeSchema.optional(),
   })
   .refine((c) => !(c.taskBudgetUsd !== undefined && c.taskBudgetTokens !== undefined), {
     message: 'guard: taskBudgetUsd and taskBudgetTokens are mutually exclusive — set at most one',
@@ -136,6 +144,16 @@ const lessonsSchema = z.object({
   ttlMs: z.number().int().nonnegative().optional(),
 });
 
+/**
+ * `logCompact` is NESTED inside `harnessSchema`, same category/reasoning as
+ * `lessons` above — `ctx.logCompact` is a per-`runHarnessed()`-call concern.
+ */
+const logCompactSchema = z.object({
+  maxLines: z.number().int().positive().optional(),
+  strategy: z.enum(['cap', 'errors-only', 'incremental']).optional(),
+  escalateOnEmpty: z.boolean().optional(),
+});
+
 const harnessSchema = z.object({
   guard: z.union([guardSchema, z.literal(false)]).optional(),
   errorHandler: z.union([errorHandlerSchema, z.literal(false)]).optional(),
@@ -146,6 +164,7 @@ const harnessSchema = z.object({
   execution: z.union([executionSchema, z.literal(false)]).optional(),
   cache: z.union([cacheSchema, z.literal(false)]).optional(),
   lessons: z.union([lessonsSchema, z.literal(false)]).optional(),
+  logCompact: z.union([logCompactSchema, z.literal(false)]).optional(),
 });
 
 /**
@@ -282,6 +301,8 @@ export interface ResolvedGuard {
   taskBudget: { usd: number; tokens: number } | null;
   /** v0.8 — resolved wall-clock duration cap in ms. null when disabled (no timer installed). */
   maxDurationMs: number | null;
+  /** v0.9 — resolved propose gate. null when `propose.require` is not true (rollback contract — no check at all). */
+  propose: { approvalTtlMs: number; proposalsDir: string } | null;
 }
 
 export interface ResolvedErrorHandler {
@@ -338,6 +359,12 @@ export interface ResolvedLessons {
   ttlMs: number;
 }
 
+export interface ResolvedLogCompact {
+  maxLines: number;
+  strategy: 'cap' | 'errors-only' | 'incremental';
+  escalateOnEmpty: boolean;
+}
+
 export interface ResolvedHarnessConfig {
   guard: ResolvedGuard | null;
   errorHandler: ResolvedErrorHandler | null;
@@ -348,6 +375,7 @@ export interface ResolvedHarnessConfig {
   execution: ResolvedExecution | null;
   cache: ResolvedCache | null;
   lessons: ResolvedLessons | null;
+  logCompact: ResolvedLogCompact | null;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────
@@ -378,6 +406,13 @@ function resolveGuard(c: GuardConfig): ResolvedGuard {
     injection: c.injection ?? 'strict',
     taskBudget,
     maxDurationMs: c.maxDurationMs ?? 300_000,
+    propose:
+      c.propose?.require
+        ? {
+            approvalTtlMs: c.propose.approvalTtlMs ?? 24 * 60 * 60 * 1000,
+            proposalsDir: c.propose.proposalsDir ?? '.nim/proposals',
+          }
+        : null,
   };
 }
 
@@ -464,6 +499,14 @@ function resolveLessons(c: LessonsConfig): ResolvedLessons {
   };
 }
 
+function resolveLogCompact(c: LogCompactConfig): ResolvedLogCompact {
+  return {
+    maxLines: c.maxLines ?? 100,
+    strategy: c.strategy ?? 'errors-only',
+    escalateOnEmpty: c.escalateOnEmpty ?? true,
+  };
+}
+
 // ─── Public API ─────────────────────────────────────────────────────────
 
 /**
@@ -484,6 +527,7 @@ export function resolveConfig(input: HarnessConfig = {}): ResolvedHarnessConfig 
     execution: parsed.execution ? resolveExecution(parsed.execution) : null,
     cache: parsed.cache ? resolveCache(parsed.cache) : null,
     lessons: parsed.lessons ? resolveLessons(parsed.lessons) : null,
+    logCompact: parsed.logCompact ? resolveLogCompact(parsed.logCompact) : null,
   };
 }
 

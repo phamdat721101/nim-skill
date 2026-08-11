@@ -25,6 +25,7 @@ import type {
   RunStatus,
   ErrorClass,
   LessonsMatchTrace,
+  LogCompactResult,
 } from './types.js';
 import {
   resolveConfig,
@@ -33,6 +34,7 @@ import {
   type ResolvedHarnessConfig,
 } from '../config.js';
 import { createGuard } from '../guard/guard.js';
+import { checkProposal } from '../guard/propose.js';
 import { basePricePerToken } from '../cache/roi.js';
 import { run, createBreaker } from '../error-handler/recover.js';
 import { classify } from '../error-handler/classify.js';
@@ -44,6 +46,7 @@ import { createContextHelper } from '../context/index.js';
 import { createMemoryHelper, verifyKey } from '../memory/index.js';
 import { createCacheHelper, computeRoi } from '../cache/index.js';
 import { createLessonsHelper } from '../lessons/index.js';
+import { createLogCompactHelper } from '../logcompact/index.js';
 import { createBudgetHelper } from '../guard/budget.js';
 import { estimateTokensOf } from '../tokens.js';
 
@@ -162,11 +165,18 @@ function buildRunCtx(
   getCacheUsage: () => ReturnType<ReturnType<typeof createCacheHelper>['getRecorded']>;
   getLessonsMatch: () => LessonsMatchTrace | undefined;
   getBudgetSpentUsd: () => number | undefined;
+  getLogCompact: () => LogCompactResult | undefined;
 } {
   const hasBudget = !!cfg.guard?.taskBudget;
-  const enabled = cfg.cache || cfg.context || cfg.memory || cfg.execution?.isolate || cfg.lessons || hasBudget;
+  const enabled = cfg.cache || cfg.context || cfg.memory || cfg.execution?.isolate || cfg.lessons || cfg.logCompact || hasBudget;
   if (!enabled) {
-    return { runCtx: ctx, getCacheUsage: () => null, getLessonsMatch: () => undefined, getBudgetSpentUsd: () => undefined };
+    return {
+      runCtx: ctx,
+      getCacheUsage: () => null,
+      getLessonsMatch: () => undefined,
+      getBudgetSpentUsd: () => undefined,
+      getLogCompact: () => undefined,
+    };
   }
 
   // Isolation (U2): a cloned ctx keeps intermediate/retry state out of the caller's ctx.
@@ -208,11 +218,39 @@ function buildRunCtx(
     };
   }
 
+  // v0.9 nim-logcompact — AGGREGATE across every compact() call this run
+  // (sum chars, then re-derive reductionPct from the totals), not
+  // last-call-wins: a skill calling compact() more than once per run (e.g.
+  // cli.run compacting stdout AND stderr separately) would otherwise have an
+  // earlier meaningful result silently overwritten by a later, possibly-
+  // empty one (found via manual verification of `nim-skill run --logcompact
+  // --monitor` reporting 0 chars despite stdout clearly being compacted —
+  // stderr's empty-string compact() call ran second and clobbered it).
+  const logCompactTotals = { originalChars: 0, compactedChars: 0, calls: 0 };
+  if (cfg.logCompact) {
+    const helper = createLogCompactHelper(cfg.logCompact);
+    runCtx.logCompact = {
+      compact(raw) {
+        const result = helper.compact(raw);
+        logCompactTotals.originalChars += result.originalChars;
+        logCompactTotals.compactedChars += result.compactedChars;
+        logCompactTotals.calls += 1;
+        return result;
+      },
+    };
+  }
+
   return {
     runCtx,
     getCacheUsage: () => cacheHandle.getRecorded(),
     getLessonsMatch: () => (seen.ids.length ? { matchedLessonIds: [...seen.ids], severity: seen.severity } : undefined),
     getBudgetSpentUsd: () => budgetHelper?.spentUsd(),
+    getLogCompact: () => {
+      if (logCompactTotals.calls === 0) return undefined;
+      const { originalChars, compactedChars } = logCompactTotals;
+      const reductionPct = originalChars === 0 ? 0 : Math.max(0, Math.round(((originalChars - compactedChars) / originalChars) * 100));
+      return { text: '', originalChars, compactedChars, reductionPct };
+    },
   };
 }
 
@@ -239,7 +277,7 @@ export async function runHarnessed<O extends Dict = Dict>(
   const controller = maxDurationMs ? new AbortController() : null;
   const isTimedOut = () => controller?.signal.aborted ?? false;
 
-  const { runCtx, getCacheUsage, getLessonsMatch, getBudgetSpentUsd } = buildRunCtx(ctx, cfg, isTimedOut);
+  const { runCtx, getCacheUsage, getLessonsMatch, getBudgetSpentUsd, getLogCompact } = buildRunCtx(ctx, cfg, isTimedOut);
   if (controller) runCtx.signal = controller.signal;
 
   const accounting = !!(cfg.monitor?.tokenAccounting || cfg.context);
@@ -275,6 +313,19 @@ export async function runHarnessed<O extends Dict = Dict>(
     };
   };
 
+  // v0.9 nim-propose — build the ProposalTrace only when guard.propose is
+  // configured (additive/optional, same precedent as budgetTrace above).
+  // Re-derives the SAME check guard.checkPolicy() already performed
+  // (skill.name as the task description, matching the checkPolicy call
+  // below) purely for trace-reporting purposes — decoupled from GuardError,
+  // which only carries a reason string, not the structured check result.
+  const proposalTrace = (): TraceRecord['proposal'] => {
+    const cfg9 = cfg.guard?.propose;
+    if (!cfg9) return undefined;
+    const result = checkProposal(skill.name, cfg9);
+    return { required: true, approved: result.approved, ...(result.reason ? { reason: result.reason } : {}) };
+  };
+
   // ①② guard + ②b context budget — a breach captures a 'denied' trace and rethrows.
   let validated: Dict;
   try {
@@ -290,10 +341,16 @@ export async function runHarnessed<O extends Dict = Dict>(
     const preflightCostUsd = cfg.guard?.taskBudget
       ? estimateTokensOf(validated) * basePricePerToken('anthropic')
       : 0;
-    guard.checkPolicy({ agentId: ctx.agentId, tool: skill.name, taskCostUsd: preflightCostUsd });
+    guard.checkPolicy({ agentId: ctx.agentId, tool: skill.name, taskCostUsd: preflightCostUsd, taskDescription: skill.name });
     if (runCtx.context) runCtx.context.budget(estimateTokensOf(validated));
   } catch (err) {
-    emit({ status: 'denied', durationMs: dur(), ...roiFields('denied', undefined, false, 0, undefined), ...(budgetTrace() ? { budget: budgetTrace() } : {}) });
+    emit({
+      status: 'denied',
+      durationMs: dur(),
+      ...roiFields('denied', undefined, false, 0, undefined),
+      ...(budgetTrace() ? { budget: budgetTrace() } : {}),
+      ...(proposalTrace() ? { proposal: proposalTrace() } : {}),
+    });
     throw err;
   }
 
@@ -332,6 +389,8 @@ export async function runHarnessed<O extends Dict = Dict>(
   // ⑤ success trace + envelope
   const lessonsMatch = getLessonsMatch();
   const budget = budgetTrace();
+  const logCompact = getLogCompact();
+  const proposal = proposalTrace();
   const trace = emit({
     status: 'success',
     durationMs: dur(),
@@ -340,6 +399,8 @@ export async function runHarnessed<O extends Dict = Dict>(
     ...(cacheTrace ? { cache: cacheTrace } : {}),
     ...(lessonsMatch ? { lessonsMatch } : {}),
     ...(budget ? { budget } : {}),
+    ...(logCompact ? { logCompact } : {}),
+    ...(proposal ? { proposal } : {}),
   });
 
   return {

@@ -14,6 +14,7 @@ import type { ZodType } from 'zod';
 import type { ResolvedGuard } from '../config.js';
 import { scanPayload } from './injection.js';
 import { PolicyEnforcer } from './policy.js';
+import { checkProposal } from './propose.js';
 
 export type GuardReason =
   | 'invalid_input'
@@ -21,7 +22,8 @@ export type GuardReason =
   | 'tool_not_allowed'
   | 'rate_limited'
   | 'cost_cap_exceeded'
-  | 'task_budget_exceeded';
+  | 'task_budget_exceeded'
+  | 'proposal_required';
 
 export class GuardError extends Error {
   constructor(readonly reason: GuardReason, message?: string) {
@@ -37,6 +39,8 @@ export interface GuardPolicyContext {
   costUsd?: number;
   /** v0.8 — fed into the per-task (non-cumulative, resets every call) taskBudgetUsd check. Independent of `costUsd` (decision 4). */
   taskCostUsd?: number;
+  /** v0.9 — the task's description text, used to look up its proposal artifact when `guard.propose.require` is true. Checked BEFORE cost/rate/budget (deterministic ordering — see propose.test.ts). */
+  taskDescription?: string;
 }
 
 export interface Guard {
@@ -74,6 +78,16 @@ class ActiveGuard implements Guard {
   }
 
   checkPolicy(ctx: GuardPolicyContext): void {
+    // v0.9 nim-propose — checked FIRST, before cost/rate/budget (deterministic
+    // ordering, regression-tested in propose.test.ts): a task with no approved
+    // plan should surface `proposal_required`, not an unrelated budget/cost
+    // denial that happens to also apply to the same call.
+    if (this.cfg.propose) {
+      const result = checkProposal(ctx.taskDescription ?? '', this.cfg.propose);
+      if (!result.approved) {
+        throw new GuardError('proposal_required', `proposal ${result.reason} for task`);
+      }
+    }
     const reason = this.policy.check(ctx.agentId, ctx.tool, ctx.costUsd ?? 0, ctx.taskCostUsd ?? 0);
     if (reason) {
       const code = reason.startsWith('tool_not_allowed')

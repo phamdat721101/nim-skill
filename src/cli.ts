@@ -8,7 +8,8 @@
  */
 import { Command } from 'commander';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { VERSION } from './index.js';
 import { loadNimJson, mergeHarness, resolveConfig, loadBaselineJson, resolveBaselineConfig, loadWorkspaceJson, resolveWorkspaceConfig, loadWorkruleJson, resolveWorkruleConfig } from './config.js';
 import { runHarnessed, HarnessExecutionError } from './harness/runtime.js';
@@ -20,6 +21,8 @@ import { createBaselineLinter } from './baseline/index.js';
 import { createWorkspaceGuard } from './workspace/index.js';
 import { createIndexMeter } from './index-meter/index.js';
 import { createLessonsHelper } from './lessons/index.js';
+import { proposalHashFor, proposalPathFor } from './guard/propose.js';
+import { createOwnerProfileStore, buildScaffold, sectionsPresentIn } from './guard/owner-profile.js';
 import { createLessonsStore } from './lessons/store.js';
 import { createWorkruleHelper, WORKRULE_QUESTIONS } from './workrule/index.js';
 import { readHookInputFromStdin } from './hook-adapters/stdin-read.js';
@@ -46,11 +49,13 @@ program
   .argument('<cmd>', 'shell command to run inside the harness')
   .option('--enforce', 'require a non-empty, non-error result (adds a nonempty check)')
   .option('--monitor', 'force console + file trace exporters')
+  .option('--logcompact', 'compact stdout/stderr before verification/output (default strategy: errors-only, 100 lines)')
   .description('Run a command inside the harness (guard/error-handler/monitor/enforcer via nim.json).')
-  .action(async (cmd: string, opts: { enforce?: boolean; monitor?: boolean }) => {
+  .action(async (cmd: string, opts: { enforce?: boolean; monitor?: boolean; logcompact?: boolean }) => {
     let harness: HarnessConfig = loadNimJson();
     if (opts.monitor) harness = mergeHarness(harness, { monitor: { exporters: ['console', 'file'] } });
     if (opts.enforce) harness = mergeHarness(harness, { enforcer: { strategies: [{ kind: 'schema', required: ['stdout'] }], mode: 'strict', maxHeals: 0 } });
+    if (opts.logcompact) harness = mergeHarness(harness, { logCompact: {} });
 
     const skill: SkillDef = {
       name: 'cli.run',
@@ -66,10 +71,23 @@ program
       // listener that kills the child process — deliberately out of scope
       // for v0.8 (decision 7); tracked as a named follow-up, not silently
       // left undocumented. See docs/prd/14-master-prd-v08-nim-guard-budget.md.
-      execute: () => {
+      execute: (_input, runCtx) => {
         const res = runShell(cmd);
-        if (res.code !== 0) throw new Error(`command exited ${res.code}: ${res.stderr.trim()}`);
-        return { stdout: res.stdout.trim(), code: res.code };
+        // v0.9 nim-logcompact — go through ctx.logCompact (the harness-
+        // injected helper), NOT a locally-created one, so the SAME call the
+        // trace records is the one whose compacted text is actually used —
+        // a separately-constructed helper here would compact correctly but
+        // leave runtime.ts's getLogCompact() (and therefore trace.logCompact)
+        // empty, since it only tracks calls made through ctx.logCompact.
+        // Compacting before the enforcer's nonempty/schema check means
+        // --enforce still verifies the SAME (compacted) text a caller
+        // receives, never a mismatch between what was checked and printed.
+        // escalateOnEmpty (default true) means a real failure buried outside
+        // the error-context window still surfaces instead of vanishing.
+        const stdout = runCtx.logCompact ? runCtx.logCompact.compact(res.stdout).text : res.stdout;
+        const stderr = runCtx.logCompact ? runCtx.logCompact.compact(res.stderr).text : res.stderr;
+        if (res.code !== 0) throw new Error(`command exited ${res.code}: ${stderr.trim()}`);
+        return { stdout: stdout.trim(), code: res.code };
       },
     };
 
@@ -110,9 +128,11 @@ program
   .option('--savings', 'show the U3 net-token savings view')
   .option('--cache', 'show the v0.3 cache-ROI view')
   .option('--budget', 'show the v0.8 per-task budget consumption + timeout view')
+  .option('--logcompact', 'show the v0.9 output-compaction reduction view')
+  .option('--propose', 'show the v0.9 proposal-gate approval/denial view')
   .description('Render the local run dashboard from the JSONL trace file.')
-  .action((_action: string, opts: { file: string; savings?: boolean; cache?: boolean; budget?: boolean }) => {
-    const view = opts.savings ? 'savings' : opts.cache ? 'cache' : opts.budget ? 'budget' : 'default';
+  .action((_action: string, opts: { file: string; savings?: boolean; cache?: boolean; budget?: boolean; logcompact?: boolean; propose?: boolean }) => {
+    const view = opts.savings ? 'savings' : opts.cache ? 'cache' : opts.budget ? 'budget' : opts.logcompact ? 'logcompact' : opts.propose ? 'propose' : 'default';
     process.stdout.write(renderDashboard(opts.file, view) + '\n');
   });
 
@@ -342,6 +362,63 @@ workspaceCmd
     if (decision.stdout) process.stdout.write(decision.stdout);
     if (decision.stderr) process.stderr.write(decision.stderr);
     process.exitCode = decision.exitCode;
+  });
+
+program
+  .command('propose')
+  .argument('[description]', 'task description to scaffold a plan for (required unless --approve is used)')
+  .option('--approve <id>', 'mark an existing proposal (by its hash id) as approved, timestamped now')
+  .option('--proposals-dir <dir>', 'where plan artifacts live', '.nim/proposals')
+  .option('--owner-profile <path>', 'where the owner-profile learning log lives', '.nim/owner-profile.jsonl')
+  .description('nim-propose: scaffold a plan doc for a task, or approve an existing one — the pause-then-resume mechanic behind guard.propose.require.')
+  .action((description: string | undefined, opts: { approve?: string; proposalsDir: string; ownerProfile: string }) => {
+    const profileStore = createOwnerProfileStore({ store: opts.ownerProfile });
+    if (opts.approve) {
+      const path = join(opts.proposalsDir, `${opts.approve}.md`);
+      if (!existsSync(path)) {
+        process.stderr.write(`nim: no proposal found at ${path}\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const existing = readFileSync(path, 'utf8');
+      const proposedAtMatch = existing.match(/^proposed:\s*(.+)$/m);
+      const proposedAt = proposedAtMatch ? proposedAtMatch[1]!.trim() : new Date().toISOString();
+      const approvedAt = new Date().toISOString();
+      const stamped = /^approved:/m.test(existing)
+        ? existing.replace(/^approved:.*$/m, `approved: ${approvedAt}`)
+        : `${existing.trimEnd()}\n\napproved: ${approvedAt}\n`;
+      writeFileSync(path, stamped);
+      // v0.9 nim-propose "learn the owner" — record this approval so a
+      // similarly-shaped future task's scaffold can pre-fill the sections
+      // this owner actually kept, advisory-only (never skips the pause).
+      const titleMatch = existing.match(/^# Proposal:\s*(.+)$/m);
+      profileStore.record({
+        taskDescription: titleMatch ? titleMatch[1]!.trim() : opts.approve,
+        sectionsAtApproval: sectionsPresentIn(existing),
+        proposedAt,
+        approvedAt,
+      });
+      process.stdout.write(`nim: approved proposal ${opts.approve}\n`);
+      return;
+    }
+    if (!description) {
+      process.stderr.write('nim: propose requires a task description, or --approve <id>\n');
+      process.exitCode = 1;
+      return;
+    }
+    const id = proposalHashFor(description);
+    const path = proposalPathFor(description, opts.proposalsDir);
+    mkdirSync(opts.proposalsDir, { recursive: true });
+    if (existsSync(path)) {
+      process.stdout.write(`nim: proposal already exists: ${path} (id ${id})\n`);
+      return;
+    }
+    // v0.9 nim-propose "learn the owner" — advisory pre-fill toward sections
+    // this owner has consistently kept for similarly-shaped past tasks.
+    const scaffold = `${buildScaffold(description, profileStore)}\nproposed: ${new Date().toISOString()}\n`;
+    writeFileSync(path, scaffold);
+    process.stdout.write(`nim: wrote proposal ${path} (id ${id})\n`);
+    process.stdout.write(`nim: run \`nim-skill propose --approve ${id}\` once reviewed\n`);
   });
 
 const lessonsCmd = program.command('lessons').description('Auto-captured, queryable error/lesson log — a similarly-shaped-action-previously-failed check, deterministic (glob + literal-equality), not semantic.');

@@ -3,6 +3,63 @@
 All notable changes to `nim-skill`. Format loosely follows Keep-a-Changelog;
 every layer is additive + config-gated (absent/`false` ⇒ byte-identical bare run).
 
+## [0.9.0] — 2026-08-11 · `nim-logcompact` + `nim-propose`
+
+### Added
+
+- **`nim-logcompact`** — compresses raw subprocess/tool output (stdout/
+  stderr, log tails) before it reaches an agent's context. Three strategies:
+  `cap` (line-truncate), `errors-only` (default — keep error-marker lines
+  + surrounding context, drop the rest), `incremental` (total-line-count +
+  head/tail summary for very large output). `escalateOnEmpty` (default
+  `true`) falls back to a capped-but-unfiltered slice rather than silently
+  hiding a real failure buried outside the error-context window. Grounded
+  in a measured 60-96% shell/log token-cost reduction (bswen.com,
+  2026-03-02). New `harness.logCompact` config block + injected
+  `ctx.logCompact` helper (nested under `harness`, same category as
+  `cache`/`context`/`memory`/`lessons`); wired into `nim-skill run
+  --logcompact` (compacts stdout/stderr BEFORE the enforcer's check, so
+  `--enforce` verifies the exact text a caller receives); new
+  `TraceRecord.logCompact` (additive) + `nim-skill monitor --logcompact`
+  dashboard view.
+- **`nim-propose`** — extends `nim-guard` with a pre-execute deny gate
+  requiring an explicit, approved plan document before a task runs (new
+  `harness.guard.propose` block: `require`/`approvalTtlMs`/`proposalsDir`;
+  new `GuardReason: 'proposal_required'`). Checked FIRST in
+  `checkPolicy()`, before cost/rate/budget (deterministic ordering,
+  regression-tested). `nim-skill propose "<description>"` scaffolds a
+  content-hash-keyed plan doc (`.nim/proposals/<hash>.md`); `nim-skill
+  propose --approve <id>` stamps an `approved: <ISO date>` line the guard
+  checks against (TTL-checked, default 24h). Includes an owner-profile
+  learning store (`.nim/owner-profile.jsonl`, reusing `nim-lessons`' exact
+  file-backed JSONL shape) that advisory-pre-fills a new proposal's
+  sections toward patterns an owner has consistently kept for
+  similarly-shaped past tasks (deterministic head-noun keyword grouping,
+  not semantic/embedding-based) — never emits the `approved:` line itself,
+  so the approval pause is never bypassed. New `TraceRecord.proposal`
+  (additive) + `nim-skill monitor --propose` dashboard view.
+- Both primitives grounded in `docs/token-skill.json`'s two agent-skill
+  ideas, redesigned to fit nim-skill's existing config-gated primitive
+  architecture (UI-theming language from the source doc dropped as out of
+  scope for a CLI harness library, per explicit owner decision). Full
+  design record: `docs/prd/15-master-prd-v09-nim-logcompact-nim-propose.md`.
+- Three genuine bugs found and fixed during implementation (all recorded
+  in `.nim/agent-learnings.md`): (1) a new additive `TraceRecord` field
+  must also be added to `monitor/wrap.ts`'s `TraceFields`/`buildTrace()`
+  explicit whitelist, not just `harness/types.ts` — missed once, fixed,
+  then correctly applied on the next occurrence; (2) `ctx.logCompact`'s
+  original "last call wins" tracking silently zeroed out a meaningful
+  result when a skill called `compact()` more than once per run (`cli.run`
+  compacting stdout then stderr) — fixed to accumulate totals across all
+  calls in a run; (3) an e2e test writing a guard-gated `nim.json` to the
+  shared repo-root cwd leaked into a concurrently-running sibling e2e
+  file's CLI spawns — fixed by isolating that test to a dedicated scratch
+  cwd.
+- 333 tests pass (was 284 before this release; +49 new across
+  `tests/logcompact.test.ts`, `tests/propose.test.ts`,
+  `tests/owner-profile.test.ts`, extended `harness`/`dashboard-views`/
+  `config` tests, and two new e2e files), `tsc --noEmit` clean.
+
 ## [Unreleased] — v0.7 `nim-search` (docs-only PRD, awaiting approval)
 
 - Master PRD for `nim-search` — a call-time tool filter that is `nim-index`'s

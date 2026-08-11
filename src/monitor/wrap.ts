@@ -10,7 +10,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import type { TraceRecord, RunStatus, ErrorClass, CacheTrace, LessonsMatchTrace, BudgetTrace } from '../harness/types.js';
+import type { TraceRecord, RunStatus, ErrorClass, CacheTrace, LessonsMatchTrace, BudgetTrace, LogCompactResult, ProposalTrace } from '../harness/types.js';
 import type { Monitor } from './capture.js';
 
 export function newTraceId(): string {
@@ -39,6 +39,10 @@ export interface TraceFields {
   lessonsMatch?: LessonsMatchTrace;
   /** v0.8 nim-guard — per-task budget consumption report. */
   budget?: BudgetTrace;
+  /** v0.9 nim-logcompact — set only when ctx.logCompact.compact() was called this run. */
+  logCompact?: LogCompactResult;
+  /** v0.9 nim-propose — set only when guard.propose.require is configured. */
+  proposal?: ProposalTrace;
 }
 
 /** Assemble a TraceRecord from an init + measured fields. */
@@ -61,6 +65,8 @@ export function buildTrace(init: Required<Pick<TraceInit, 'skill' | 'traceId'>> 
     ...(fields.cache !== undefined ? { cache: fields.cache } : {}),
     ...(fields.lessonsMatch !== undefined ? { lessonsMatch: fields.lessonsMatch } : {}),
     ...(fields.budget !== undefined ? { budget: fields.budget } : {}),
+    ...(fields.logCompact !== undefined ? { logCompact: fields.logCompact } : {}),
+    ...(fields.proposal !== undefined ? { proposal: fields.proposal } : {}),
   };
 }
 

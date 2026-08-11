@@ -134,6 +134,56 @@ describe('runHarnessed — full pipeline dogfood', () => {
   });
 });
 
+describe('runHarnessed — logCompact (rollback contract + wiring)', () => {
+  it('a run with logCompact unset produces a trace with NO logCompact field, and ctx.logCompact is undefined (rollback contract)', async () => {
+    const exec = vi.fn((_input: unknown, runCtx: SkillContext) => {
+      expect(runCtx.logCompact).toBeUndefined();
+      return { ok: true };
+    });
+    const s = skill({ harness: {}, execute: exec });
+    const { trace } = await runHarnessed(s, {}, ctx);
+    expect(trace).not.toHaveProperty('logCompact');
+    expect((trace as Record<string, unknown>).logCompact).toBeUndefined();
+    expect(exec).toHaveBeenCalled();
+  });
+
+  it('a run with logCompact configured injects ctx.logCompact and records the reduction in the trace', async () => {
+    const rawOutput = Array.from({ length: 500 }, (_, i) => (i === 250 ? 'ERROR: boom' : `info: step ${i}`)).join('\n');
+    const s = skill({
+      name: 'z',
+      harness: { logCompact: { strategy: 'errors-only', maxLines: 50 } },
+      execute: async (_input, runCtx) => {
+        const result = runCtx.logCompact?.compact(rawOutput);
+        return { text: result?.text ?? '' };
+      },
+    });
+    const { output, trace } = await runHarnessed(s, {}, ctx);
+    expect((output as { text: string }).text).toContain('ERROR: boom');
+    expect(trace.logCompact).toBeDefined();
+    expect(trace.logCompact?.originalChars).toBe(rawOutput.length);
+    expect(trace.logCompact?.compactedChars).toBeLessThan(rawOutput.length);
+    expect(trace.logCompact?.reductionPct).toBeGreaterThan(0);
+  });
+
+  it('aggregates across MULTIPLE compact() calls in one run rather than last-call-wins (regression: a later empty-string call must not clobber an earlier meaningful result)', async () => {
+    const meaningfulOutput = Array.from({ length: 300 }, (_, i) => (i === 100 ? 'ERROR: real failure' : `info ${i}`)).join('\n');
+    const s = skill({
+      name: 'multi-call',
+      harness: { logCompact: { strategy: 'errors-only', maxLines: 50 } },
+      execute: async (_input, runCtx) => {
+        const stdoutResult = runCtx.logCompact?.compact(meaningfulOutput); // meaningful, non-empty
+        const stderrResult = runCtx.logCompact?.compact(''); // empty — must not zero out the trace
+        return { stdout: stdoutResult?.text ?? '', stderr: stderrResult?.text ?? '' };
+      },
+    });
+    const { trace } = await runHarnessed(s, {}, ctx);
+    expect(trace.logCompact).toBeDefined();
+    expect(trace.logCompact?.originalChars).toBe(meaningfulOutput.length); // NOT 0 — the empty stderr call must not clobber this
+    expect(trace.logCompact?.compactedChars).toBeGreaterThan(0);
+    expect(trace.logCompact?.reductionPct).toBeGreaterThan(0);
+  });
+});
+
 describe('runHarnessed — lessons (LS-05 rollback contract)', () => {
   it('a run with lessons unset produces a trace with NO lessonsMatch field (rollback contract)', async () => {
     const s = skill({ harness: {}, execute: async () => ({ ok: true }) });

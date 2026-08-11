@@ -1,6 +1,6 @@
 # `nim-skill` — the harness your agent runs inside
 
-> **Status: ✅ P1 (reliability trio) + v0.2 token-efficiency + v0.3 `nim-cache` + v0.4 baseline/index/profile + v0.5 `nim-workspace`/`nim-lessons` + v0.6 `nim-workrule` + v0.8 `nim-guard` per-task budget/duration cap implemented. 📝 v0.7 `nim-search` is docs-only, awaiting approval (`docs/prd/13-master-prd-v07-nim-search.md`).** `runHarnessed()` + `nim-guard` + `nim-error-handler` + `nim-monitor` + `nim-enforcer` + `nim-context` (see) + `nim-memory-lite` (remember) + isolation + token-ROI + `nim-cache` (provider-agnostic context caching) + `nim-baseline` (memory-file lint) + `nim-index` (tool-disclosure tax meter) + `nim-profile` (model-tier config resolver) + `nim-workspace` (hook-native Write/Edit gate) + `nim-lessons` (auto-captured lesson log) + `nim-workrule` (agent self-check + tracked-memory log) are built, tested (**284 tests**), and installable. Every new layer is config-gated + byte-identical when off.
+> **Status: ✅ P1 (reliability trio) + v0.2 token-efficiency + v0.3 `nim-cache` + v0.4 baseline/index/profile + v0.5 `nim-workspace`/`nim-lessons` + v0.6 `nim-workrule` + v0.8 `nim-guard` per-task budget/duration cap + v0.9 `nim-logcompact`/`nim-propose` implemented. 📝 v0.7 `nim-search` is docs-only, awaiting approval (`docs/prd/13-master-prd-v07-nim-search.md`).** `runHarnessed()` + `nim-guard` + `nim-error-handler` + `nim-monitor` + `nim-enforcer` + `nim-context` (see) + `nim-memory-lite` (remember) + isolation + token-ROI + `nim-cache` (provider-agnostic context caching) + `nim-baseline` (memory-file lint) + `nim-index` (tool-disclosure tax meter) + `nim-profile` (model-tier config resolver) + `nim-workspace` (hook-native Write/Edit gate) + `nim-lessons` (auto-captured lesson log) + `nim-workrule` (agent self-check + tracked-memory log) + `nim-logcompact` (subprocess output compaction) + `nim-propose` (plan-first approval gate + owner-profile learning) are built, tested (**338 tests**), and installable. Every new layer is config-gated + byte-identical when off.
 > **License**: MIT · **Author**: PhamDat / @nxNim9 · **Siblings**: `goal-skill` (missions), HyperMove `/tools` (hosted registry).
 
 ## What it is
@@ -21,7 +21,7 @@ It works in **any agent host** (Claude Code, Cursor, Kiro, Hermes, OpenClaw, or 
 
 2026 research is consistent: past a capability threshold, **reliability comes from the harness, not the model**. Multi-agent systems **fail 41-86% of the time without error-recovery discipline** (Taskade, 2026); context degrades as it grows (Chroma "Context Rot"); **13% of marketplace agent-skills contain critical vulnerabilities**; the agentjacking attack class is live. Agents without a harness *leak tokens, loop uncontrolled, ship unverified output, and fail silently.* `nim-skill` is the harness — as drop-in skills, not a framework you rewrite your agent into.
 
-## The 12 primitives (each = an installable skill + a runtime module)
+## The 14 shipped primitives + 1 pending PRD (each = an installable skill + a runtime module)
 
 | Skill | Status | One line |
 |---|---|---|
@@ -38,6 +38,8 @@ It works in **any agent host** (Claude Code, Cursor, Kiro, Hermes, OpenClaw, or 
 | **`nim-workspace`** | ✅ v0.5 | Hook-native existence + identity + subject-matter + staleness gate for a proposed Write/Edit — deterministic glob/grep/regex/mtime, no LLM call |
 | **`nim-lessons`** | ✅ v0.5 | Auto-captured, queryable error/lesson log — "has a similarly-shaped action previously failed?" via deterministic shape-match, not semantic search |
 | **`nim-workrule`** | ✅ v0.6 | The 6-rule working checklist an agent self-checks against its own editing behavior (SOLID/no-repeat-mistakes/essential-files/partial-reads/deployability) + `.nim/agent-support-log.md` tracking which primitive helped a task and how much context/cache it saved |
+| **`nim-logcompact`** | ✅ v0.9 | Compresses raw subprocess/tool output (stdout/stderr, log tails) before it reaches an agent's context — cap / errors-only (default) / incremental strategies, `escalateOnEmpty` guarantees a real failure never silently vanishes; wired into `nim-skill run --logcompact` and `ctx.logCompact` |
+| **`nim-propose`** | ✅ v0.9 | Extends `nim-guard` with a pre-execute deny gate requiring an explicit, approved plan document (`nim-skill propose`/`--approve`) before a task runs, plus an owner-profile learning store that advisory-pre-fills a plan's sections toward patterns an owner has consistently kept — never bypasses the approval pause itself |
 | **`nim-search`** | 📝 PRD (v0.7, `docs/prd/13-master-prd-v07-nim-search.md`) | Call-time tool filter — BM25-style lexical scoring over a manifest `nim-index` already reads, detail-level-aware (`name` / `name+description` / `full`), zero network, zero vector DB. `nim-index`'s missing runtime half: it measures the disclosure tax; `nim-search` pays only the slice of it a task needs |
 
 Plus **`nim-harness`** — the `runHarnessed(skill, input, ctx)` core that composes them into one pipeline.
@@ -107,17 +109,22 @@ nim-skill install                      # or: nim-skill install --host kiro
 git clone https://github.com/phamdat721101/nim-skill ~/.claude/skills/nim-skill
 ```
 
-`install` (zero flags) auto-detects which hosts you have (`~/.claude`, `~/.kiro`, `~/.cursor`) and copies all 4 primitive skills + the umbrella into each. Pick one with `--host`, or a custom path with `--dir`. `add <name...>` installs specific primitives.
+`install` (zero flags) auto-detects which hosts you have (`~/.claude`, `~/.kiro`, `~/.cursor`) and copies all 14 primitive skills + the umbrella into each. Pick one with `--host`, or a custom path with `--dir`. `add <name...>` installs specific primitives.
 
 Everyday use:
 
 ```bash
 nim-skill run "npm test" --enforce --monitor   # run a command inside the harness
+nim-skill run "npm test" --logcompact           # compact stdout/stderr before verification/output
 nim-skill enforce "npm test"                    # unbypassable verify-gate (exit 1 on fail)
+nim-skill propose "add a database migration"    # scaffold a plan doc (the pause half of nim-propose)
+nim-skill propose --approve <hash>              # approve it — required before a guard.propose.require run proceeds
 nim-skill monitor                               # local trace dashboard
 nim-skill monitor --savings                     # U3 net-token savings view
 nim-skill monitor --cache                       # v0.3 cache-ROI + break-even view
 nim-skill monitor --budget                      # v0.8 per-task budget consumption + timeout view
+nim-skill monitor --logcompact                  # v0.9 output-compaction reduction view
+nim-skill monitor --propose                     # v0.9 proposal-gate approval/denial view
 ```
 
 Library:

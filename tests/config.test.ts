@@ -25,6 +25,7 @@ describe('resolveConfig', () => {
       injection: 'strict',
       taskBudget: { usd: 5, tokens: expect.any(Number) },
       maxDurationMs: 300_000,
+      propose: null,
     });
   });
 

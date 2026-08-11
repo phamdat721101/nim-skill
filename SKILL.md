@@ -6,9 +6,11 @@ description: |
   error-recovered (classify → retry/backoff/circuit-breaker/fallback/escalate),
   monitored (traces), and output-verified-before-ship (unbypassable). Also ships
   hook-native workspace/lessons/workrule primitives that run OUTSIDE
-  runHarnessed(), gating a proposed Write/Edit before it lands. Composes 11
+  runHarnessed(), gating a proposed Write/Edit before it lands, plus v0.9
+  nim-logcompact (subprocess output compaction) and nim-propose (a plan-first
+  approval gate on nim-guard with owner-profile learning). Composes 13
   installable primitives. Zero network on the default path. MIT.
-version: 0.6.0
+version: 0.9.0
 author: phamdat721101 (PhamDat / @nxNim9)
 license: MIT
 tier: meta
@@ -40,6 +42,8 @@ side_effects:
   - "Writes trace JSONL to .nim/traces.jsonl when the file exporter is enabled"
   - "Writes lesson JSONL to .nim/lessons.jsonl when harness.lessons is configured"
   - "Writes the agent-support markdown log to .nim/agent-support-log.md when `nim-skill workrule log` runs"
+  - "Reads/writes proposal markdown files under .nim/proposals when guard.propose is configured or `nim-skill propose` runs"
+  - "Writes owner-profile JSONL to .nim/owner-profile.jsonl when a proposal is approved"
   - "Runs verify commands (test/lint/command strategies) via the shell"
   - "Optional: forwards error traces to Sentry when SENTRY_DSN is set (no-op otherwise)"
 identity:
@@ -57,6 +61,8 @@ sub_skills:
   - skills/nim-workspace
   - skills/nim-lessons
   - skills/nim-workrule
+  - skills/nim-logcompact
+  - skills/nim-propose
 ---
 
 
