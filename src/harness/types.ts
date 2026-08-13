@@ -253,6 +253,23 @@ export interface LessonsConfig {
 }
 
 /**
+ * v1.0 `nim-grill` — iterative interrogation session helper. Nested under
+ * `harness` (same category as `cache`/`context`/`memory`/`lessons`/`logCompact`):
+ * a per-`runHarnessed()`-call concern for the compile step; CLI-native for
+ * start/next/answer/status (which run outside runHarnessed()).
+ */
+export interface GrillConfig {
+  /** Where session JSONL files live. Default: '.nim/grill'. */
+  store?: string;
+  /** Domain question bank to load: 'x402' | 'xls65' | 'custom'. Default: 'custom'. */
+  domain?: string;
+  /** How many questions per `grill next` call. Default: 5. */
+  questionsPerBatch?: number;
+  /** Minimum resolved questions for status.complete to be true. Default: 10. */
+  minResolved?: number;
+}
+
+/**
  * v0.9 `nim-logcompact` — compresses raw subprocess/tool output (stdout/
  * stderr, log tails) before it reaches an agent's context. Nested under
  * `harness` (same category as `cache`/`context`/`memory`/`lessons`): a
@@ -355,6 +372,8 @@ export interface HarnessConfig {
   cache?: CacheConfig | false;
   lessons?: LessonsConfig | false;
   logCompact?: LogCompactConfig | false;
+  /** v1.0 nim-grill — interrogation session helper. */
+  grill?: GrillConfig | false;
 }
 
 // ─── Skill definition ─────────────────────────────────────────────────────
@@ -377,6 +396,8 @@ export interface SkillContext {
   logCompact?: LogCompactHelper;
   /** v0.8 nim-guard — opt-in live spend accumulation, injected only when a per-task budget is configured. */
   budget?: BudgetHelper;
+  /** v1.0 nim-grill — opt-in interrogation session helper, injected only when harness.grill is configured. */
+  grill?: import('../grill/types.js').GrillHelper;
   /**
    * v0.8 nim-guard — a real AbortSignal, injected only when `guard.maxDurationMs`
    * is configured. Fires (`.aborted === true`) once the wall-clock cap elapses.

@@ -1,6 +1,6 @@
 # `nim-skill` — the harness your agent runs inside
 
-> **Status: ✅ P1 (reliability trio) + v0.2 token-efficiency + v0.3 `nim-cache` + v0.4 baseline/index/profile + v0.5 `nim-workspace`/`nim-lessons` + v0.6 `nim-workrule` + v0.8 `nim-guard` per-task budget/duration cap + v0.9 `nim-logcompact`/`nim-propose` implemented. 📝 v0.7 `nim-search` is docs-only, awaiting approval (`docs/prd/13-master-prd-v07-nim-search.md`).** `runHarnessed()` + `nim-guard` + `nim-error-handler` + `nim-monitor` + `nim-enforcer` + `nim-context` (see) + `nim-memory-lite` (remember) + isolation + token-ROI + `nim-cache` (provider-agnostic context caching) + `nim-baseline` (memory-file lint) + `nim-index` (tool-disclosure tax meter) + `nim-profile` (model-tier config resolver) + `nim-workspace` (hook-native Write/Edit gate) + `nim-lessons` (auto-captured lesson log) + `nim-workrule` (agent self-check + tracked-memory log) + `nim-logcompact` (subprocess output compaction) + `nim-propose` (plan-first approval gate + owner-profile learning) are built, tested (**338 tests**), and installable. Every new layer is config-gated + byte-identical when off.
+> **Status: ✅ 15 primitives shipped through v1.0 — reliability trio (guard/error-handler/monitor/enforcer) + token-efficiency (context/memory/cache) + workspace hygiene (baseline/index/profile/workspace/lessons/workrule) + output compaction & approval gates (logcompact/propose) + design-tree interrogation (`nim-grill`, v1.0). 📝 `nim-search` (v0.7) is docs-only, awaiting approval (`docs/prd/13-master-prd-v07-nim-search.md`).** All 15 are built, tested (**374 tests**), and installable. Every layer is config-gated + byte-identical when off — see the [primitives table](#the-15-shipped-primitives--1-pending-prd) below for what each one does.
 > **License**: MIT · **Author**: PhamDat / @nxNim9 · **Siblings**: `goal-skill` (missions), HyperMove `/tools` (hosted registry).
 
 ## What it is
@@ -21,7 +21,7 @@ It works in **any agent host** (Claude Code, Cursor, Kiro, Hermes, OpenClaw, or 
 
 2026 research is consistent: past a capability threshold, **reliability comes from the harness, not the model**. Multi-agent systems **fail 41-86% of the time without error-recovery discipline** (Taskade, 2026); context degrades as it grows (Chroma "Context Rot"); **13% of marketplace agent-skills contain critical vulnerabilities**; the agentjacking attack class is live. Agents without a harness *leak tokens, loop uncontrolled, ship unverified output, and fail silently.* `nim-skill` is the harness — as drop-in skills, not a framework you rewrite your agent into.
 
-## The 14 shipped primitives + 1 pending PRD (each = an installable skill + a runtime module)
+## The 15 shipped primitives + 1 pending PRD (each = an installable skill + a runtime module)
 
 | Skill | Status | One line |
 |---|---|---|
@@ -40,6 +40,7 @@ It works in **any agent host** (Claude Code, Cursor, Kiro, Hermes, OpenClaw, or 
 | **`nim-workrule`** | ✅ v0.6 | The 6-rule working checklist an agent self-checks against its own editing behavior (SOLID/no-repeat-mistakes/essential-files/partial-reads/deployability) + `.nim/agent-support-log.md` tracking which primitive helped a task and how much context/cache it saved |
 | **`nim-logcompact`** | ✅ v0.9 | Compresses raw subprocess/tool output (stdout/stderr, log tails) before it reaches an agent's context — cap / errors-only (default) / incremental strategies, `escalateOnEmpty` guarantees a real failure never silently vanishes; wired into `nim-skill run --logcompact` and `ctx.logCompact` |
 | **`nim-propose`** | ✅ v0.9 | Extends `nim-guard` with a pre-execute deny gate requiring an explicit, approved plan document (`nim-skill propose`/`--approve`) before a task runs, plus an owner-profile learning store that advisory-pre-fills a plan's sections toward patterns an owner has consistently kept — never bypasses the approval pause itself |
+| **`nim-grill`** | ✅ v1.0 | Iterative interrogation loop — probes a design tree (x402 payment gateways, XLS-65 vaults, or a custom domain) one branch at a time, then compiles resolved answers into an enforcer-verified PRD; built on `enforce` + `memory` + `logCompact` + `workrule`, zero LLM calls inside the primitive itself. See [Using `nim-grill`](#using-nim-grill--interrogate-a-design-before-you-build-it) below |
 | **`nim-search`** | 📝 PRD (v0.7, `docs/prd/13-master-prd-v07-nim-search.md`) | Call-time tool filter — BM25-style lexical scoring over a manifest `nim-index` already reads, detail-level-aware (`name` / `name+description` / `full`), zero network, zero vector DB. `nim-index`'s missing runtime half: it measures the disclosure tax; `nim-search` pays only the slice of it a task needs |
 
 Plus **`nim-harness`** — the `runHarnessed(skill, input, ctx)` core that composes them into one pipeline.
@@ -89,6 +90,34 @@ A few practical rules that make the difference between "installed" and "actually
 
 **7. Check `nim-skill monitor --savings` / `--cache` / `--budget` before tuning, not after.** Each view answers a different question — token-ROI, cache break-even, and per-task budget consumption respectively — and all three read from the same local JSONL trace file, so there's no reason to guess at a config change's effect when the last N runs already have the answer.
 
+## Using `nim-grill` — interrogate a design before you build it
+
+`nim-grill` turns "let's just start coding" into a structured Q&A: it walks a design tree branch-by-branch, records your answer to each question (with an agent-recommended answer alongside it), and won't let you compile a PRD until enough decisions are actually resolved.
+
+- **① Start a session** — picks a built-in question bank:
+  ```bash
+  nim-skill grill start --domain x402      # 12 Qs: HTTP 402 headers, ERC-3009/Permit2, facilitator trust
+  nim-skill grill start --domain xls65     # 10 Qs: MPT shares, VaultCreate/Set/Deposit, lending decoupling
+  nim-skill grill start --domain custom    # 3 Qs, extensible — generic security/architecture fallback
+  ```
+- **② Work the questions** — `nim-skill grill next` returns up to 5 unresolved questions at a time, each with a recommended answer so you're reviewing a proposal, not staring at a blank page.
+- **③ Answer one at a time**:
+  ```bash
+  nim-skill grill answer --id x402-001 --answer "Base64-encoded JSON, Zod-validated server-side, reject with 400 on schema failure"
+  ```
+- **④ Track progress** — `nim-skill grill status` reports `resolved / total` and whether you've crossed the `minResolved` threshold (default 10).
+- **⑤ Compile the PRD** — once complete, `nim-skill grill compile --workrule-log` runs inside the harness: `nim-enforcer` verifies the PRD schema (`sessionId`, `resolvedDecisions`, `acceptanceCriteria`) before anything is written, then writes `.nim/grill/<id>-prd.md` and appends a WR-06 tracked-memory entry.
+
+Everything is local and prompt-only — **zero LLM calls inside the primitive**; the host agent is the one running the generated question prompts. State lives in `.nim/grill/<id>.jsonl` (append-only, replayable), so a session survives across CLI invocations.
+
+Opt in via `nim.json` (same byte-identical-off contract as every other layer):
+
+```jsonc
+{ "harness": { "grill": { "domain": "x402", "questionsPerBatch": 5, "minResolved": 10 } } }
+```
+
+Want a custom domain's questions? Drop a JSON file at `.nim/grill/questions/<domain>.json` — it merges with the built-in bank. Full reference: [`skills/nim-grill/SKILL.md`](./skills/nim-grill/SKILL.md).
+
 ## Install & use (P1 — implemented)
 
 Same familiar flow as any npm/GitHub skill — no npm-publish needed (a `prepare` hook builds `dist/` on clone):
@@ -109,7 +138,7 @@ nim-skill install                      # or: nim-skill install --host kiro
 git clone https://github.com/phamdat721101/nim-skill ~/.claude/skills/nim-skill
 ```
 
-`install` (zero flags) auto-detects which hosts you have (`~/.claude`, `~/.kiro`, `~/.cursor`) and copies all 14 primitive skills + the umbrella into each. Pick one with `--host`, or a custom path with `--dir`. `add <name...>` installs specific primitives.
+`install` (zero flags) auto-detects which hosts you have (`~/.claude`, `~/.kiro`, `~/.cursor`) and copies all 15 primitive skills + the umbrella into each. Pick one with `--host`, or a custom path with `--dir`. `add <name...>` installs specific primitives.
 
 Everyday use:
 
@@ -119,6 +148,9 @@ nim-skill run "npm test" --logcompact           # compact stdout/stderr before v
 nim-skill enforce "npm test"                    # unbypassable verify-gate (exit 1 on fail)
 nim-skill propose "add a database migration"    # scaffold a plan doc (the pause half of nim-propose)
 nim-skill propose --approve <hash>              # approve it — required before a guard.propose.require run proceeds
+nim-skill grill start --domain x402             # start an interrogation session (x402 | xls65 | custom)
+nim-skill grill next                            # next batch of unresolved questions + recommendations
+nim-skill grill compile --workrule-log          # ≥10 resolved → enforcer-verified PRD + WR-06 log
 nim-skill monitor                               # local trace dashboard
 nim-skill monitor --savings                     # U3 net-token savings view
 nim-skill monitor --cache                       # v0.3 cache-ROI + break-even view

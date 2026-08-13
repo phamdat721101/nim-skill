@@ -26,6 +26,7 @@ import type {
   CacheProvider,
   LessonsConfig,
   LogCompactConfig,
+  GrillConfig,
   VerifyStrategy,
   EnforceMode,
 } from './harness/types.js';
@@ -154,6 +155,18 @@ const logCompactSchema = z.object({
   escalateOnEmpty: z.boolean().optional(),
 });
 
+/**
+ * `grill` is NESTED inside `harnessSchema` (same category/reasoning as
+ * `lessons`/`logCompact` above) — `ctx.grill` is a per-`runHarnessed()`-call
+ * concern for the compile step. CLI-native for start/next/answer/status.
+ */
+const grillSchema = z.object({
+  store: z.string().optional(),
+  domain: z.string().optional(),
+  questionsPerBatch: z.number().int().min(1).max(10).optional(),
+  minResolved: z.number().int().min(1).optional(),
+});
+
 const harnessSchema = z.object({
   guard: z.union([guardSchema, z.literal(false)]).optional(),
   errorHandler: z.union([errorHandlerSchema, z.literal(false)]).optional(),
@@ -165,6 +178,7 @@ const harnessSchema = z.object({
   cache: z.union([cacheSchema, z.literal(false)]).optional(),
   lessons: z.union([lessonsSchema, z.literal(false)]).optional(),
   logCompact: z.union([logCompactSchema, z.literal(false)]).optional(),
+  grill: z.union([grillSchema, z.literal(false)]).optional(),
 });
 
 /**
@@ -365,6 +379,13 @@ export interface ResolvedLogCompact {
   escalateOnEmpty: boolean;
 }
 
+export interface ResolvedGrillConfig {
+  store: string;
+  domain: string;
+  questionsPerBatch: number;
+  minResolved: number;
+}
+
 export interface ResolvedHarnessConfig {
   guard: ResolvedGuard | null;
   errorHandler: ResolvedErrorHandler | null;
@@ -376,6 +397,7 @@ export interface ResolvedHarnessConfig {
   cache: ResolvedCache | null;
   lessons: ResolvedLessons | null;
   logCompact: ResolvedLogCompact | null;
+  grill: ResolvedGrillConfig | null;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────
@@ -507,6 +529,15 @@ function resolveLogCompact(c: LogCompactConfig): ResolvedLogCompact {
   };
 }
 
+function resolveGrillConfig(c: GrillConfig): ResolvedGrillConfig {
+  return {
+    store: c.store ?? (process.env.NIM_GRILL_DIR ?? '.nim/grill'),
+    domain: c.domain ?? 'custom',
+    questionsPerBatch: c.questionsPerBatch ?? 5,
+    minResolved: c.minResolved ?? 10,
+  };
+}
+
 // ─── Public API ─────────────────────────────────────────────────────────
 
 /**
@@ -528,6 +559,7 @@ export function resolveConfig(input: HarnessConfig = {}): ResolvedHarnessConfig 
     cache: parsed.cache ? resolveCache(parsed.cache) : null,
     lessons: parsed.lessons ? resolveLessons(parsed.lessons) : null,
     logCompact: parsed.logCompact ? resolveLogCompact(parsed.logCompact) : null,
+    grill: parsed.grill ? resolveGrillConfig(parsed.grill) : null,
   };
 }
 

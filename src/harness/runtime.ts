@@ -47,6 +47,7 @@ import { createMemoryHelper, verifyKey } from '../memory/index.js';
 import { createCacheHelper, computeRoi } from '../cache/index.js';
 import { createLessonsHelper } from '../lessons/index.js';
 import { createLogCompactHelper } from '../logcompact/index.js';
+import { createGrillHelper } from '../grill/index.js';
 import { createBudgetHelper } from '../guard/budget.js';
 import { estimateTokensOf } from '../tokens.js';
 
@@ -168,7 +169,7 @@ function buildRunCtx(
   getLogCompact: () => LogCompactResult | undefined;
 } {
   const hasBudget = !!cfg.guard?.taskBudget;
-  const enabled = cfg.cache || cfg.context || cfg.memory || cfg.execution?.isolate || cfg.lessons || cfg.logCompact || hasBudget;
+  const enabled = cfg.cache || cfg.context || cfg.memory || cfg.execution?.isolate || cfg.lessons || cfg.logCompact || cfg.grill || hasBudget;
   if (!enabled) {
     return {
       runCtx: ctx,
@@ -239,6 +240,10 @@ function buildRunCtx(
       },
     };
   }
+
+  // v1.0 nim-grill — inject ctx.grill when harness.grill is configured.
+  // Byte-identical-off when cfg.grill is null.
+  if (cfg.grill) runCtx.grill = createGrillHelper(cfg.grill);
 
   return {
     runCtx,

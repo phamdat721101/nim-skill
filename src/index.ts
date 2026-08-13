@@ -4,7 +4,7 @@
  * Each primitive is also exported standalone.
  */
 
-export const VERSION = '0.6.0';
+export const VERSION = '0.10.0';
 
 // Core
 export { runHarnessed, HarnessExecutionError } from './harness/runtime.js';
@@ -30,6 +30,7 @@ export {
   type ResolvedMemory,
   type ResolvedExecution,
   type ResolvedCache,
+  type ResolvedGrillConfig,
 } from './config.js';
 
 // Guard
@@ -66,3 +67,26 @@ export { createCacheHelper, computeRoi, pickAdapter, parseUsage, type ParsedUsag
 
 // v0.6 — workrule
 export { createWorkruleHelper, WORKRULE_QUESTIONS, type AgentSupportEntry } from './workrule/index.js';
+
+// v1.0 — grill
+export {
+  createGrillHelper,
+  createGrillStore,
+  compilePRD,
+  formatPRDMarkdown,
+  loadQuestionsForDomain,
+  DOMAIN_QUESTIONS,
+  X402_QUESTIONS,
+  XLS65_QUESTIONS,
+  GENERIC_QUESTIONS,
+  sessionIdFor,
+  writePRDFile,
+} from './grill/index.js';
+export type {
+  GrillSession,
+  GrillQuestion,
+  GrillAnswer,
+  GrillPRD,
+  GrillConfig,
+  GrillHelper,
+} from './grill/types.js';

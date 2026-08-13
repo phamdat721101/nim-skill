@@ -10,7 +10,7 @@ description: |
   nim-logcompact (subprocess output compaction) and nim-propose (a plan-first
   approval gate on nim-guard with owner-profile learning). Composes 13
   installable primitives. Zero network on the default path. MIT.
-version: 0.9.0
+version: 0.10.0
 author: phamdat721101 (PhamDat / @nxNim9)
 license: MIT
 tier: meta
@@ -21,8 +21,9 @@ when_to_use: |
   - Cut token cost: context budget, verify/priors cache, provider prompt-caching (45–80% input-cost cut).
   - Lint a memory file, meter a tool-disclosure tax, tighten config for a weaker model tier.
   - Gate a proposed Write/Edit against workspace identity/existence + a working-rule self-check.
+  - Interrogate a builder's design plan (x402/xls65/custom) and compile an enforcer-verified PRD.
   - Add drop-in reliability without rewriting your agent into a framework.
-  - Keywords: harness, verify output, block bad output, retry, circuit breaker, cost cap, agentjacking, context caching, token savings, memory-file lint, tool-disclosure tax, model tier, workspace guard, working rule.
+  - Keywords: harness, verify output, block bad output, retry, circuit breaker, cost cap, agentjacking, context caching, token savings, memory-file lint, tool-disclosure tax, model tier, workspace guard, working rule, grill interrogation, PRD compile.
 schema:
   harness_config: ./schema/harness-config.json
   trace: ./schema/trace.json
@@ -44,6 +45,8 @@ side_effects:
   - "Writes the agent-support markdown log to .nim/agent-support-log.md when `nim-skill workrule log` runs"
   - "Reads/writes proposal markdown files under .nim/proposals when guard.propose is configured or `nim-skill propose` runs"
   - "Writes owner-profile JSONL to .nim/owner-profile.jsonl when a proposal is approved"
+  - "Reads/writes grill session JSONL under .nim/grill/ when `nim-skill grill` commands run"
+  - "Writes compiled PRD markdown to .nim/grill/<session-id>-prd.md when `nim-skill grill compile` runs"
   - "Runs verify commands (test/lint/command strategies) via the shell"
   - "Optional: forwards error traces to Sentry when SENTRY_DSN is set (no-op otherwise)"
 identity:
@@ -63,6 +66,7 @@ sub_skills:
   - skills/nim-workrule
   - skills/nim-logcompact
   - skills/nim-propose
+  - skills/nim-grill
 ---
 
 

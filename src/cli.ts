@@ -25,6 +25,8 @@ import { proposalHashFor, proposalPathFor } from './guard/propose.js';
 import { createOwnerProfileStore, buildScaffold, sectionsPresentIn } from './guard/owner-profile.js';
 import { createLessonsStore } from './lessons/store.js';
 import { createWorkruleHelper, WORKRULE_QUESTIONS } from './workrule/index.js';
+import { createGrillStore, loadQuestionsForDomain, compilePRD, formatPRDMarkdown, writePRDFile, sessionIdFor } from './grill/index.js';
+import { resolveConfig as _resolveGrillCfg } from './config.js';
 import { readHookInputFromStdin } from './hook-adapters/stdin-read.js';
 import { toClaudeCodeDecision } from './hook-adapters/claude-code.js';
 import { toKiroCliDecision } from './hook-adapters/kiro-cli.js';
@@ -513,6 +515,198 @@ workruleCmd
       return;
     }
     for (const e of all) process.stdout.write(`${e.at}  [${e.primitive}]  ${e.effect}${e.tokensSaved !== undefined ? `  (~${e.tokensSaved} tokens saved)` : ''}\n`);
+  });
+
+// ─── nim-skill grill ─────────────────────────────────────────────────────────
+
+function grillStoreDir(): string {
+  return process.env.NIM_GRILL_DIR ?? '.nim/grill';
+}
+
+const grillCmd = program
+  .command('grill')
+  .description(
+    'Iterative interrogation loop: probe every design-tree branch (x402/xls65/custom), resolve decisions, compile an enforcer-verified PRD.',
+  );
+
+grillCmd
+  .command('start')
+  .option('--domain <domain>', 'x402 | xls65 | custom', 'custom')
+  .option('--context <file>', 'optional context file to ingest (compacted via nim-logcompact before seeding questions)')
+  .description('Start a new grill session and load the question bank for the given domain.')
+  .action((opts: { domain: string; context?: string }) => {
+    const store = createGrillStore(grillStoreDir());
+    let contextSummary = '';
+    if (opts.context) {
+      if (!existsSync(opts.context)) {
+        process.stderr.write(`nim: context file not found: ${opts.context}\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const raw = readFileSync(opts.context, 'utf8');
+      // Apply logcompact (errors-only, 100-line cap) to keep context lean
+      const lines = raw.split('\n');
+      const capped = lines.length > 100 ? [...lines.slice(0, 50), `… [${lines.length - 100} lines omitted] …`, ...lines.slice(-50)] : lines;
+      contextSummary = `\n\n> Context loaded from \`${opts.context}\` (${raw.length} chars → ${capped.join('\n').length} chars after compaction)`;
+    }
+    const questions = loadQuestionsForDomain(opts.domain);
+    const session = store.create(opts.domain, questions);
+    process.stdout.write(`nim: started grill session ${session.id} (domain: ${session.domain}, ${session.questions.length} questions across ${session.branches.length} branches)${contextSummary}\n`);
+    process.stdout.write(`nim: run \`nim-skill grill next\` to get your first batch of questions\n`);
+  });
+
+grillCmd
+  .command('next')
+  .option('-n, --count <n>', 'override the number of questions to show', '5')
+  .description('Print the next batch of unresolved questions with architectural recommendations.')
+  .action((opts: { count: string }) => {
+    const store = createGrillStore(grillStoreDir());
+    const session = store.latest();
+    if (!session) {
+      process.stderr.write('nim: no active grill session — run `nim-skill grill start` first\n');
+      process.exitCode = 1;
+      return;
+    }
+    const batchSize = Math.min(Math.max(Number(opts.count) || 5, 1), 10);
+    const pending = session.questions.filter((q) => !q.resolved).slice(0, batchSize);
+    if (pending.length === 0) {
+      process.stdout.write('nim: all questions resolved — run `nim-skill grill compile` to produce the PRD\n');
+      return;
+    }
+    for (const q of pending) {
+      process.stdout.write(`\n[${q.id}] [${q.branch}]\n`);
+      process.stdout.write(`Q: ${q.text}\n`);
+      process.stdout.write(`→ Recommendation: ${q.recommendation}\n`);
+    }
+    process.stdout.write(`\n(${pending.length} question(s) shown — use \`nim-skill grill answer --id <id> --answer <text>\` to respond)\n`);
+  });
+
+grillCmd
+  .command('answer')
+  .requiredOption('--id <id>', 'question ID to answer, e.g. x402-001')
+  .requiredOption('--answer <text>', 'your architectural decision or answer')
+  .description('Record a builder answer for a question, marking it resolved.')
+  .action((opts: { id: string; answer: string }) => {
+    const store = createGrillStore(grillStoreDir());
+    const session = store.latest();
+    if (!session) {
+      process.stderr.write('nim: no active grill session — run `nim-skill grill start` first\n');
+      process.exitCode = 1;
+      return;
+    }
+    const question = session.questions.find((q) => q.id === opts.id);
+    if (!question) {
+      process.stderr.write(`nim: question not found: ${opts.id}\n`);
+      process.exitCode = 1;
+      return;
+    }
+    store.answer(session.id, opts.id, opts.answer);
+    process.stdout.write(`nim: recorded answer for ${opts.id} ✓\n`);
+  });
+
+grillCmd
+  .command('status')
+  .description('Show session progress: resolved vs total questions, per-branch breakdown.')
+  .action(() => {
+    const store = createGrillStore(grillStoreDir());
+    const session = store.latest();
+    if (!session) {
+      process.stderr.write('nim: no active grill session — run `nim-skill grill start` first\n');
+      process.exitCode = 1;
+      return;
+    }
+    const resolved = session.questions.filter((q) => q.resolved).length;
+    const total = session.questions.length;
+    process.stdout.write(`Session: ${session.id}  domain: ${session.domain}  status: ${session.status}\n`);
+    process.stdout.write(`Progress: ${resolved}/${total} resolved\n`);
+    for (const branch of session.branches) {
+      const branchQs = session.questions.filter((q) => q.branch === branch);
+      const branchResolved = branchQs.filter((q) => q.resolved).length;
+      process.stdout.write(`  [${branch}] ${branchResolved}/${branchQs.length}\n`);
+    }
+    if (resolved >= 10) {
+      process.stdout.write('✓ Ready to compile — run `nim-skill grill compile`\n');
+    } else {
+      process.stdout.write(`(${10 - resolved} more answer(s) needed before compile is available)\n`);
+    }
+  });
+
+grillCmd
+  .command('compile')
+  .option('--workrule-log', 'also append a WR-06 entry to .nim/agent-support-log.md')
+  .option('--force', 'compile even if minResolved threshold not yet reached')
+  .description('Compile the current session into an enforcer-verified PRD → .nim/grill/<session-id>-prd.md')
+  .action(async (opts: { workruleLog?: boolean; force?: boolean }) => {
+    const store = createGrillStore(grillStoreDir());
+    const session = store.latest();
+    if (!session) {
+      process.stderr.write('nim: no active grill session — run `nim-skill grill start` first\n');
+      process.exitCode = 1;
+      return;
+    }
+    const resolved = session.questions.filter((q) => q.resolved).length;
+    if (resolved < 10 && !opts.force) {
+      process.stderr.write(`nim: only ${resolved}/10 minimum answers resolved. Use --force to compile anyway\n`);
+      process.exitCode = 1;
+      return;
+    }
+
+    // Run compile inside runHarnessed() with enforcer (schema) + memory (verify-cache) + monitor
+    const harness: HarnessConfig = mergeHarness(loadNimJson(), {
+      enforcer: {
+        strategies: [
+          { kind: 'schema', required: ['sessionId', 'resolvedDecisions', 'acceptanceCriteria'] },
+          { kind: 'nonempty' },
+        ],
+        mode: 'strict',
+        maxHeals: 2,
+      },
+      memory: { verifyCache: true, priors: true, ttlMs: 7 * 24 * 60 * 60 * 1000 },
+      monitor: { exporters: ['console'] },
+    });
+
+    const skill: SkillDef = {
+      name: 'grill.compile',
+      version: VERSION,
+      harness,
+      execute: (_input, _ctx) => {
+        const prd = compilePRD(session);
+        return prd as unknown as Record<string, unknown>;
+      },
+    };
+
+    try {
+      const r = await runHarnessed(skill, {}, { agentId: 'cli' });
+      const prd = r.output as unknown as ReturnType<typeof compilePRD>;
+      const md = formatPRDMarkdown(prd);
+      const prdFile = writePRDFile(grillStoreDir(), session.id, md);
+      store.markCompiled(session.id, prdFile);
+      process.stdout.write(`nim: compiled PRD → ${prdFile}\n`);
+      process.stdout.write(`nim: ${prd.resolvedDecisions.length} decisions, ${prd.acceptanceCriteria.length} acceptance criteria\n`);
+      if (!r.verified) {
+        process.stderr.write('nim: PRD failed enforcer schema verification\n');
+        process.exitCode = 1;
+      }
+      // WR-06 workrule log
+      if (opts.workruleLog) {
+        const wrCfg = resolveWorkruleConfig(loadWorkruleJson());
+        const wrHelper = createWorkruleHelper(wrCfg);
+        wrHelper.log({
+          primitive: 'nim-grill',
+          effect: `compiled PRD for domain '${session.domain}' — ${prd.resolvedDecisions.length} resolved decisions, enforcer-verified`,
+        });
+        process.stdout.write('nim: WR-06 entry logged to .nim/agent-support-log.md\n');
+      }
+    } catch (err) {
+      if (err instanceof HarnessExecutionError) {
+        process.stderr.write(`nim: grill compile failed: ${err.message}\n`);
+      } else if (err instanceof GuardError) {
+        process.stderr.write(`nim: grill compile blocked by guard: ${err.message}\n`);
+      } else {
+        process.stderr.write(`nim: grill compile error: ${String(err)}\n`);
+      }
+      process.exitCode = 1;
+    }
   });
 
 program.parseAsync(process.argv);
