@@ -77,6 +77,22 @@ function runStrategy(
         reason: pass ? undefined : `missing required fields: ${missing.join(', ')}`,
       };
     }
+    case 'result': {
+      if (!Object.prototype.hasOwnProperty.call(s, 'successValue')) {
+        return { strategy: 'result', pass: false, reason: "result strategy requires a 'successValue'" };
+      }
+      const envelope = s.requiredPath ? get(output, s.requiredPath) : output;
+      if (!envelope || typeof envelope !== 'object') {
+        return { strategy: 'result', pass: false, reason: `missing result envelope${s.requiredPath ? ` at ${s.requiredPath}` : ''}` };
+      }
+      const value = get(envelope as Record<string, unknown>, s.successPath);
+      const pass = Object.is(value, s.successValue);
+      return {
+        strategy: `result(${s.requiredPath ? `${s.requiredPath}.` : ''}${s.successPath})`,
+        pass,
+        reason: pass ? undefined : `expected ${s.successPath} to equal ${JSON.stringify(s.successValue)}`,
+      };
+    }
     case 'math': {
       const items = get(output, s.itemsField);
       const total = Number(get(output, s.totalField));

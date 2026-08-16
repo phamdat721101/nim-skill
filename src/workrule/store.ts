@@ -14,11 +14,12 @@ import { existsSync, readFileSync, appendFileSync, mkdirSync, writeFileSync } fr
 import { dirname } from 'node:path';
 import type { AgentSupportEntry } from './types.js';
 
-const HEADER = '# Agent support log\n\n> How nim-skill\'s own primitives helped THIS project\'s agent work — appended by `nim-skill workrule log`, one row per primitive-assisted moment. Gitignored (same as every other `.nim/*` file).\n\n| at | primitive | effect | tokensSaved |\n|---|---|---|---|\n';
+const HEADER = '# Agent support log\n\n> How nim-skill\'s own primitives helped THIS project\'s agent work — appended by `nim-skill workrule log`, one row per primitive-assisted moment. Gitignored (same as every other `.nim/*` file).\n\n| at | primitive | effect | tokensSaved | references |\n|---|---|---|---|---|\n';
 
 function toRow(e: AgentSupportEntry): string {
   const effect = e.effect.replace(/\|/g, '\\|');
-  return `| ${e.at} | ${e.primitive} | ${effect} | ${e.tokensSaved ?? ''} |\n`;
+  const references = e.references ? JSON.stringify(e.references).replace(/\|/g, '\\|') : '';
+  return `| ${e.at} | ${e.primitive} | ${effect} | ${e.tokensSaved ?? ''} | ${references} |\n`;
 }
 
 export interface WorkruleStoreConfig {
@@ -43,11 +44,17 @@ function parseRows(md: string): AgentSupportEntry[] {
   const rows: AgentSupportEntry[] = [];
   for (const line of md.split('\n')) {
     const cells = splitRow(line);
-    if (!cells || cells.length !== 4) continue;
-    const [at, primitive, effect, tokensSavedRaw] = cells;
+    if (!cells || (cells.length !== 4 && cells.length !== 5)) continue;
+    const [at, primitive, effect, tokensSavedRaw, referencesRaw] = cells;
     if (!at || at === 'at' || at.startsWith('---') || !primitive || !effect) continue;
     const tokensSaved = tokensSavedRaw ? Number(tokensSavedRaw) : undefined;
-    rows.push({ at, primitive, effect, ...(tokensSaved !== undefined && !Number.isNaN(tokensSaved) ? { tokensSaved } : {}) });
+    let references: AgentSupportEntry['references'];
+    try {
+      references = referencesRaw ? JSON.parse(referencesRaw) as AgentSupportEntry['references'] : undefined;
+    } catch {
+      references = undefined;
+    }
+    rows.push({ at, primitive, effect, ...(tokensSaved !== undefined && !Number.isNaN(tokensSaved) ? { tokensSaved } : {}), ...(references ? { references } : {}) });
   }
   return rows;
 }

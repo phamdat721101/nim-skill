@@ -19,6 +19,8 @@ export interface AgentSupportEntry {
   effect: string;
   /** Optional — populated only when the primitive reports a measurable token/context saving. */
   tokensSaved?: number;
+  /** Non-secret external workflow references for correlating a logged action. */
+  references?: { provider: string; agentId?: string; sessionId?: string; runId?: string };
 }
 
 export const WORKRULE_QUESTIONS: readonly { id: string; question: string }[] = [

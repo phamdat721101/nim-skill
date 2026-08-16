@@ -53,6 +53,17 @@ describe('verifyOrHeal — strategies', () => {
     expect(r.verified).toBe(false);
     expect(r.checks[0]?.reason).toMatch(/requires a 'command'/);
   });
+
+  it('result: rejects transport-successful semantic failures and supports nested envelopes', async () => {
+    const topLevel = strict([{ kind: 'result', successPath: 'ok', successValue: true }]);
+    expect((await verifyOrHeal({ ok: false, error: 'missing proof' }, topLevel)).verified).toBe(false);
+    expect((await verifyOrHeal({ ok: true }, topLevel)).verified).toBe(true);
+
+    const nested = strict([{ kind: 'result', requiredPath: 'result', successPath: 'ok', successValue: true }]);
+    expect((await verifyOrHeal({ result: { ok: true } }, nested)).verified).toBe(true);
+    expect((await verifyOrHeal({ result: { ok: false } }, nested)).verified).toBe(false);
+    expect((await verifyOrHeal({}, nested)).verified).toBe(false);
+  });
 });
 
 describe('verifyOrHeal — self-heal loop', () => {

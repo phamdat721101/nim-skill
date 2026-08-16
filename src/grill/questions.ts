@@ -187,6 +187,63 @@ export const XLS65_QUESTIONS: QuestionTemplate[] = [
   },
 ];
 
+// ─── Insurance partner onboarding (Liventy BA→dev pipeline) ─────────────────
+// Grounded in the real §1-§10 Confluence onboarding structure (General Setup,
+// Product, Migration, Contract Import, Partner/Customer Portal, Claim Report &
+// Flow, Fulfilment, Accounting & Reporting, Testing & GoLive Acceptance).
+
+export const ONBOARDING_QUESTIONS: QuestionTemplate[] = [
+  {
+    id: 'onboarding-001',
+    branch: 'general_setup',
+    text: 'General Setup (§1) captures domains, login mode, and organization data through free-text/N-A table cells with no importer or validation UI. What confirms a filled-in field was actually applied to the partner config (e.g. IDP role scoping, portalId creation), rather than just recorded on the doc?',
+    recommendation:
+      'Treat the §1 table as a spec, not a source of truth for what shipped. Require the engineer who performs the manual DB-insert/Groovy-constant step to link back the applied config (migration/commit/DB row) on the page itself, so "Requirement Specified" status cannot silently drift from "Actually configured".',
+  },
+  {
+    id: 'onboarding-002',
+    branch: 'contract_import',
+    text: 'Contract Import (§4) interface (CSV over SFTP vs API) is still being negotiated with the partner mid-onboarding, with format details (delimiter, BOM, ext-refs for market/product) unresolved. If the interface changes after Migration (§3) has already run once, what is the reconciliation/re-import story for records already loaded under the old assumption?',
+    recommendation:
+      'Do not run a production Migration/Contract Import pass until the interface contract (format + ext-ref mapping) is signed off in writing on the page, not just "clarifying with Miro". Treat the first import as a dry run against a disposable dataset until the contract is frozen.',
+  },
+  {
+    id: 'onboarding-003',
+    branch: 'claim_flow',
+    text: 'Claim Report & Flow (§7) rejection-reason catalogs list ~20-30 manual rejection templates per product group, and most rows say "Please provide CMS keys... de/fr/it" — i.e. the translation keys are not yet created. What blocks go-live if an agent hits a rejection reason with no CMS translation deployed for the customer\'s language?',
+    recommendation:
+      'Do not let "the CMS key doesn\'t exist yet" surface as a runtime error to a claim agent or customer. Either gate go-live on 100% of listed rejection templates having live CMS keys in de/fr/it, or add an explicit fallback template (e.g. generic rejection notice) so an incomplete catalog degrades gracefully instead of failing silently.',
+  },
+  {
+    id: 'onboarding-004',
+    branch: 'claim_flow',
+    text: 'The Coverage Confirmation checkbox default was just changed to unchecked as a "NEW Requirement" specifically for Lipo CH, changing whether a customer notification e-mail fires when an agent submits. Is this a per-tenant config flag or a global behavior change to the shared Coverage Confirmation function used by other partners?',
+    recommendation:
+      'If Coverage Confirmation is a shared component (used by other Licus partners beyond Lipo CH), this default MUST be tenant-scoped config, not a global code change - otherwise other partners silently stop sending confirmation e-mails. Verify blast radius before shipping; if it truly must be global, that is a cross-tenant regression risk requiring sign-off beyond this partner\'s onboarding.',
+  },
+  {
+    id: 'onboarding-005',
+    branch: 'fulfilment',
+    text: 'The repair-partner routing table (§7.4.2.3) hardcodes real bank account/IBAN details per external repair partner (Elser.Swiss, Sertronics, De Longhi, Jura) directly in the onboarding doc. Where does this banking data actually get consumed downstream (banking-service payment file generation, manual AP entry, or elsewhere), and is the Confluence table itself the system of record or just a one-time input?',
+    recommendation:
+      'A Confluence table should never be the long-term system of record for payment routing/IBAN data used in production payouts. Confirm this gets loaded into a proper partner/vendor master (with the same access controls as tools-banking-service SEPA config) during onboarding, not left as a doc someone copy-pastes from at payout time.',
+  },
+  {
+    id: 'onboarding-006',
+    branch: 'testing_golive',
+    text: 'Testing & GoLive Acceptance (§10) is a completely empty page (version 1, no content at all) while §1/§4/§7 are already at "Requirement Specified" and mid-negotiation. What is the actual go/no-go gate for Lipo CH\'s 2026-08-24 due date if no acceptance criteria have been written down anywhere?',
+    recommendation:
+      'Treat an empty §10 as a hard blocker, not a placeholder to fill in later - a due date without written acceptance criteria means "done" is whoever remembers to check, not a verifiable gate. At minimum, define: which of §1-§9 must be "Requirement Specified" -> "Implemented" -> "Verified" before go-live, and who signs off.',
+  },
+  {
+    id: 'onboarding-007',
+    branch: 'general_setup',
+    text: 'Every onboarding artifact for this partner (org/product setup, claim-flow config, migration, contract import) is filled in by hand via a different manual mechanism (direct DB insert + Groovy constants for org/product, YAML for claim-flow rules, a Groovy subclass for claim-report rendering, CSV/SFTP still undecided for contract import) with no unified importer across any of them. For a Swiss partner with de/fr/it + BDX reporting requirements layered on top, where is a single engineer most likely to silently drop a required field because it lives in a 4th different mechanism than the other 3?',
+    recommendation:
+      'Build (or reuse) a single onboarding checklist that cross-references all 4 mechanisms\' required fields for this partner (languages, BDX scheme/treaty, CMS keys, repair-partner bank data) so nothing falls in the gap between "that is not my mechanism to fill in". Do not rely on tribal knowledge of which of the 4 places a given field lives.',
+  },
+];
+
 // ─── Generic security fallback ────────────────────────────────────────────────
 
 export const GENERIC_QUESTIONS: QuestionTemplate[] = [
@@ -219,6 +276,7 @@ export const DOMAIN_QUESTIONS: Record<string, QuestionTemplate[]> = {
   x402: X402_QUESTIONS,
   xls65: XLS65_QUESTIONS,
   custom: GENERIC_QUESTIONS,
+  onboarding: ONBOARDING_QUESTIONS,
 };
 
 /** Load questions for a domain, initialising `resolved: false` on each. */

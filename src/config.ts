@@ -46,9 +46,10 @@ const verifyStrategySchema: z.ZodType<VerifyStrategy> = z.union([
   z.object({ kind: z.literal('test'), command: z.string() }),
   z.object({ kind: z.literal('lint'), command: z.string() }),
   z.object({ kind: z.literal('command'), command: z.string() }),
+  z.object({ kind: z.literal('result'), successPath: z.string().min(1), successValue: z.boolean(), requiredPath: z.string().min(1).optional() }),
 ]);
 
-const strategyName = z.enum(['nonempty', 'json', 'schema', 'math', 'test', 'lint', 'command']);
+const strategyName = z.enum(['nonempty', 'json', 'schema', 'math', 'test', 'lint', 'command', 'result']);
 
 const proposeSchema = z.object({
   require: z.boolean().optional(),
@@ -65,6 +66,8 @@ const guardSchema = z
     taskBudgetUsd: z.number().positive().optional(),
     taskBudgetTokens: z.number().int().positive().optional(),
     maxDurationMs: z.number().int().positive().optional(),
+    weeklyTokenBudget: z.number().int().positive().optional(),
+    weeklyBudgetStore: z.string().optional(),
     propose: proposeSchema.optional(),
   })
   .refine((c) => !(c.taskBudgetUsd !== undefined && c.taskBudgetTokens !== undefined), {
@@ -111,6 +114,7 @@ const memorySchema = z.object({
   priors: z.boolean().optional(),
   ttlMs: z.number().int().nonnegative().optional(),
   store: z.string().optional(),
+  sessionStore: z.string().optional(),
 });
 
 const executionSchema = z.object({
@@ -315,6 +319,8 @@ export interface ResolvedGuard {
   taskBudget: { usd: number; tokens: number } | null;
   /** v0.8 — resolved wall-clock duration cap in ms. null when disabled (no timer installed). */
   maxDurationMs: number | null;
+  weeklyTokenBudget: number | null;
+  weeklyBudgetStore: string;
   /** v0.9 — resolved propose gate. null when `propose.require` is not true (rollback contract — no check at all). */
   propose: { approvalTtlMs: number; proposalsDir: string } | null;
 }
@@ -351,6 +357,7 @@ export interface ResolvedMemory {
   priors: boolean;
   ttlMs: number;
   store: string;
+  sessionStore: string;
 }
 
 export interface ResolvedExecution {
@@ -428,6 +435,8 @@ function resolveGuard(c: GuardConfig): ResolvedGuard {
     injection: c.injection ?? 'strict',
     taskBudget,
     maxDurationMs: c.maxDurationMs ?? 300_000,
+    weeklyTokenBudget: c.weeklyTokenBudget ?? null,
+    weeklyBudgetStore: c.weeklyBudgetStore ?? '.nim/weekly-token-budget.jsonl',
     propose:
       c.propose?.require
         ? {
@@ -488,6 +497,7 @@ function resolveMemory(c: MemoryConfig): ResolvedMemory {
     priors: c.priors ?? false,
     ttlMs: c.ttlMs ?? 24 * 60 * 60 * 1000,
     store: c.store ?? (process.env.NIM_MEMORY_FILE ?? '.nim/memory.jsonl'),
+    sessionStore: c.sessionStore ?? '.nim/sessions.jsonl',
   };
 }
 

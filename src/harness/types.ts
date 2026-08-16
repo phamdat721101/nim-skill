@@ -19,7 +19,8 @@ export type VerifyStrategy =
   | { kind: 'math'; check: 'invoice-sum'; itemsField: string; totalField: string }
   | { kind: 'test'; command: string }
   | { kind: 'lint'; command: string }
-  | { kind: 'command'; command: string };
+  | { kind: 'command'; command: string }
+  | { kind: 'result'; successPath: string; successValue: boolean; requiredPath?: string };
 
 /** Bare strategy names usable as config shorthand (param-less ones only). */
 export type VerifyStrategyName = VerifyStrategy['kind'];
@@ -98,6 +99,7 @@ export interface BudgetTrace {
   capTokensEquivalent: number;
   spentTokensEquivalent: number;
   timedOut: boolean;
+  weekly?: { capTokens: number; spentTokens: number };
 }
 
 export interface TraceRecord {
@@ -151,6 +153,10 @@ export interface GuardConfig {
   taskBudgetTokens?: number;
   /** v0.8 — wall-clock duration cap in ms for one `runHarnessed()` call. Cooperative cancellation via `ctx.signal` (never a hard/preemptive kill). Defaults to 300_000 (5 min). */
   maxDurationMs?: number;
+  /** Optional rolling seven-day local token allowance. */
+  weeklyTokenBudget?: number;
+  /** Local JSONL ledger path for the optional weekly token allowance. */
+  weeklyBudgetStore?: string;
   /**
    * v0.9 `nim-propose` — pre-execute deny gate requiring an explicit,
    * approved plan artifact before a task runs. Extends `nim-guard` directly
@@ -223,6 +229,8 @@ export interface MemoryConfig {
   priors?: boolean;
   ttlMs?: number;
   store?: string;
+  /** Separate local JSONL store for typed external sessions. */
+  sessionStore?: string;
 }
 
 /** U2 — isolated-context skill execution (keeps retry/heal noise out of the main window). */
@@ -315,6 +323,29 @@ export interface MemoryHelper {
   setVerify(key: string, verdict: boolean): void;
   getPrior(category: string): unknown;
   setPrior(category: string, value: unknown): void;
+  getSession<T extends ExternalSession = ExternalSession>(provider: string, options?: SessionOptions): T | undefined;
+  setSession(provider: string, session: ExternalSession, options?: SetSessionOptions): void;
+  clearSession(provider: string, options?: SessionOptions): void;
+}
+
+/** Non-secret external workflow state. Private credentials are never accepted. */
+export interface ExternalSession {
+  provider?: string;
+  agentId?: string;
+  sessionId?: string;
+  walletAddress?: string;
+  quoteId?: string;
+  expiresAt?: string;
+  lastRunId?: string;
+  updatedAt?: string;
+}
+
+export interface SessionOptions {
+  profile?: string;
+}
+
+export interface SetSessionOptions extends SessionOptions {
+  ttlMs?: number;
 }
 
 export interface LessonsHelper {
@@ -358,6 +389,8 @@ export interface BudgetHelper {
   timedOut(): boolean;
   /** Current accumulated spend, in USD (converted via the shared pricing table when tracked in tokens). */
   spentUsd(): number;
+  spentTokens(): number;
+  weekly(): { capTokens: number; spentTokens: number } | undefined;
 }
 
 /** Declarative harness config — the `harness` block of nim.json / a skill. */

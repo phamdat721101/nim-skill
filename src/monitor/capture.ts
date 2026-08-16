@@ -16,6 +16,7 @@ import type { ResolvedMonitor } from '../config.js';
 import { ConsoleSink } from './sinks/console.js';
 import { FileSink } from './sinks/file.js';
 import { SentrySink } from './sinks/sentry.js';
+import { redactSecrets } from '../security/secrets.js';
 
 /** Strategy interface — one method, one contract. MUST NOT throw. */
 export interface EventSink {
@@ -51,11 +52,12 @@ class ActiveMonitor implements Monitor {
   constructor(readonly sinks: readonly EventSink[]) {}
 
   capture(trace: TraceRecord): void {
+    const safeTrace = redactSecrets(trace);
     for (const sink of this.sinks) {
       // Fire-and-forget; a sink can never block another or throw upstream.
       queueMicrotask(() => {
         try {
-          void sink.emit(trace);
+          void sink.emit(safeTrace);
         } catch {
           /* swallowed — sink-liveness contract */
         }

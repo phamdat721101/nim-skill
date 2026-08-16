@@ -48,7 +48,7 @@ import { createCacheHelper, computeRoi } from '../cache/index.js';
 import { createLessonsHelper } from '../lessons/index.js';
 import { createLogCompactHelper } from '../logcompact/index.js';
 import { createGrillHelper } from '../grill/index.js';
-import { createBudgetHelper } from '../guard/budget.js';
+import { createBudgetHelper, WeeklyTokenLedger } from '../guard/budget.js';
 import { estimateTokensOf } from '../tokens.js';
 
 type Dict = Record<string, unknown>;
@@ -166,9 +166,10 @@ function buildRunCtx(
   getCacheUsage: () => ReturnType<ReturnType<typeof createCacheHelper>['getRecorded']>;
   getLessonsMatch: () => LessonsMatchTrace | undefined;
   getBudgetSpentUsd: () => number | undefined;
+  getWeeklyBudget: () => { capTokens: number; spentTokens: number } | undefined;
   getLogCompact: () => LogCompactResult | undefined;
 } {
-  const hasBudget = !!cfg.guard?.taskBudget;
+  const hasBudget = !!cfg.guard && (!!cfg.guard.taskBudget || cfg.guard.weeklyTokenBudget !== null);
   const enabled = cfg.cache || cfg.context || cfg.memory || cfg.execution?.isolate || cfg.lessons || cfg.logCompact || cfg.grill || hasBudget;
   if (!enabled) {
     return {
@@ -176,6 +177,7 @@ function buildRunCtx(
       getCacheUsage: () => null,
       getLessonsMatch: () => undefined,
       getBudgetSpentUsd: () => undefined,
+      getWeeklyBudget: () => undefined,
       getLogCompact: () => undefined,
     };
   }
@@ -191,8 +193,11 @@ function buildRunCtx(
   // SAME per-task cap Task 2's pre-flight check used. Injected only when a
   // task budget is configured (byte-identical-off otherwise).
   let budgetHelper: ReturnType<typeof createBudgetHelper> | undefined;
-  if (hasBudget && cfg.guard?.taskBudget) {
-    budgetHelper = createBudgetHelper(cfg.guard.taskBudget.usd, isTimedOut);
+  if (hasBudget && cfg.guard) {
+    const weekly = cfg.guard.weeklyTokenBudget
+      ? new WeeklyTokenLedger(cfg.guard.weeklyTokenBudget, cfg.guard.weeklyBudgetStore)
+      : undefined;
+    budgetHelper = createBudgetHelper(cfg.guard.taskBudget?.usd ?? Infinity, isTimedOut, weekly);
     runCtx.budget = budgetHelper;
   }
 
@@ -250,6 +255,7 @@ function buildRunCtx(
     getCacheUsage: () => cacheHandle.getRecorded(),
     getLessonsMatch: () => (seen.ids.length ? { matchedLessonIds: [...seen.ids], severity: seen.severity } : undefined),
     getBudgetSpentUsd: () => budgetHelper?.spentUsd(),
+    getWeeklyBudget: () => budgetHelper?.weekly(),
     getLogCompact: () => {
       if (logCompactTotals.calls === 0) return undefined;
       const { originalChars, compactedChars } = logCompactTotals;
@@ -282,7 +288,7 @@ export async function runHarnessed<O extends Dict = Dict>(
   const controller = maxDurationMs ? new AbortController() : null;
   const isTimedOut = () => controller?.signal.aborted ?? false;
 
-  const { runCtx, getCacheUsage, getLessonsMatch, getBudgetSpentUsd, getLogCompact } = buildRunCtx(ctx, cfg, isTimedOut);
+  const { runCtx, getCacheUsage, getLessonsMatch, getBudgetSpentUsd, getWeeklyBudget, getLogCompact } = buildRunCtx(ctx, cfg, isTimedOut);
   if (controller) runCtx.signal = controller.signal;
 
   const accounting = !!(cfg.monitor?.tokenAccounting || cfg.context);
@@ -307,14 +313,16 @@ export async function runHarnessed<O extends Dict = Dict>(
   const provider = basePricePerToken('anthropic');
   const budgetTrace = (): TraceRecord['budget'] => {
     const cap = cfg.guard?.taskBudget;
-    if (!cap) return undefined;
+    const weekly = getWeeklyBudget();
+    if (!cap && !weekly) return undefined;
     const spentUsd = getBudgetSpentUsd() ?? 0;
     return {
-      capUsd: cap.usd,
+      capUsd: cap?.usd ?? Infinity,
       spentUsd,
-      capTokensEquivalent: cap.tokens,
+      capTokensEquivalent: cap?.tokens ?? Infinity,
       spentTokensEquivalent: Math.round(spentUsd / provider),
       timedOut: isTimedOut(),
+      ...(weekly ? { weekly } : {}),
     };
   };
 

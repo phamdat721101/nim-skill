@@ -9,6 +9,7 @@
  */
 
 import type { CompactStrategy, LogCompactConfig } from './types.js';
+import { redactSecretText } from '../security/secrets.js';
 
 const ERROR_MARKER = /\b(ERROR|FAIL|FATAL|Exception)\b|error:/i;
 const DEFAULT_MAX_LINES = 100;
@@ -64,16 +65,17 @@ function summarizeIncremental(text: string, maxLines: number): string {
  * back to a capped-but-unfiltered slice instead.
  */
 export function compact(text: string, cfg: LogCompactConfig): string {
+  const safeText = redactSecretText(text);
   const maxLines = cfg.maxLines ?? DEFAULT_MAX_LINES;
   const strategy: CompactStrategy = cfg.strategy ?? 'errors-only';
   const escalateOnEmpty = cfg.escalateOnEmpty ?? true;
 
-  if (strategy === 'cap') return capLines(text, maxLines);
-  if (strategy === 'incremental') return summarizeIncremental(text, maxLines);
+  if (strategy === 'cap') return capLines(safeText, maxLines);
+  if (strategy === 'incremental') return summarizeIncremental(safeText, maxLines);
 
   // 'errors-only'
-  const filtered = filterErrors(text, DEFAULT_CONTEXT_LINES);
+  const filtered = filterErrors(safeText, DEFAULT_CONTEXT_LINES);
   if (filtered !== '') return capLines(filtered, maxLines);
-  if (escalateOnEmpty) return capLines(text, maxLines);
+  if (escalateOnEmpty) return capLines(safeText, maxLines);
   return '';
 }

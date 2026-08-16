@@ -59,6 +59,12 @@ describe('createWorkruleHelper', () => {
     expect(history[0]?.effect).toBe('rejected output missing required | field');
   });
 
+  it('round-trips non-secret external session references', () => {
+    const helper = createWorkruleHelper({ logFile: TEST_LOG });
+    helper.log({ primitive: 'nim-memory', effect: 'recovered paid session', references: { provider: 'hypermove', agentId: 'agent-1', sessionId: 'session-1', runId: 'run-1' } });
+    expect(helper.history()[0]?.references).toEqual({ provider: 'hypermove', agentId: 'agent-1', sessionId: 'session-1', runId: 'run-1' });
+  });
+
   it('history() on a missing log file returns an empty array, never throws', () => {
     const helper = createWorkruleHelper({ logFile: TEST_LOG });
     expect(helper.history()).toEqual([]);
