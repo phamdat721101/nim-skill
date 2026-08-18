@@ -493,13 +493,22 @@ workruleCmd
   .command('log')
   .requiredOption('--primitive <name>', 'which nim-skill primitive fired, e.g. nim-cache')
   .requiredOption('--effect <text>', 'what it caught / prevented / enabled this task')
+  .option('--resolution-type <type>', 'fix | workaround | mitigation')
   .option('--tokens-saved <n>', 'measured token/context saving, if known')
   .description('Append a tracked-memory entry (WR-06) to .nim/agent-support-log.md (gitignored).')
-  .action((opts: { primitive: string; effect: string; tokensSaved?: string }) => {
+  .action((opts: { primitive: string; effect: string; resolutionType?: string; tokensSaved?: string }) => {
     const cfg = resolveWorkruleConfig(loadWorkruleJson());
     const helper = createWorkruleHelper(cfg);
     const tokensSaved = opts.tokensSaved !== undefined ? Number(opts.tokensSaved) : undefined;
-    const entry = helper.log({ primitive: opts.primitive, effect: opts.effect, ...(tokensSaved !== undefined && !Number.isNaN(tokensSaved) ? { tokensSaved } : {}) });
+    const validResolution = opts.resolutionType === 'fix' || opts.resolutionType === 'workaround' || opts.resolutionType === 'mitigation';
+    if (opts.resolutionType && !validResolution) {
+      process.stderr.write('nim: --resolution-type must be fix, workaround, or mitigation\n');
+      process.exitCode = 1;
+      return;
+    }
+    if (!opts.resolutionType) process.stderr.write('nim: warning — --resolution-type will become required in the next minor release\n');
+    const resolutionType = validResolution ? opts.resolutionType as 'fix' | 'workaround' | 'mitigation' : undefined;
+    const entry = helper.log({ primitive: opts.primitive, effect: opts.effect, ...(resolutionType ? { resolutionType } : {}), ...(tokensSaved !== undefined && !Number.isNaN(tokensSaved) ? { tokensSaved } : {}) });
     process.stdout.write(`nim: logged (${entry.primitive} @ ${entry.at})\n`);
   });
 

@@ -28,6 +28,7 @@ describe('resolveConfig', () => {
       weeklyTokenBudget: null,
       weeklyBudgetStore: '.nim/weekly-token-budget.jsonl',
       propose: null,
+      costGate: null,
     });
   });
 
@@ -111,6 +112,13 @@ describe('resolveConfig', () => {
   it('rollback contract: an absent guard block resolves to null exactly as before (no behavior change)', () => {
     const r = resolveConfig({});
     expect(r.guard).toBeNull();
+  });
+
+  it('resolves costGate defaults and rejects an explicitly disabled lessons store', () => {
+    const r = resolveConfig({ guard: { costGate: { tools: ['payments.*'] } } });
+    expect(r.guard?.costGate).toEqual({ tools: ['payments.*'], lookbackHours: 24, mode: 'warn' });
+    expect(r.costGateLessons?.store).toBe('.nim/lessons.jsonl');
+    expect(() => resolveConfig({ guard: { costGate: { tools: ['payments.*'] } }, lessons: false })).toThrow(/requires lessons storage/);
   });
 });
 

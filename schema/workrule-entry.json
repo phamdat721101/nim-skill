@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/phamdat721101/nim-skill/schema/workrule-entry.json",
+  "title": "AgentSupportEntry",
+  "type": "object",
+  "required": ["at", "primitive", "effect", "resolutionType"],
+  "properties": {
+    "at": { "type": "string", "format": "date-time" },
+    "primitive": { "type": "string" },
+    "effect": { "type": "string" },
+    "resolutionType": { "enum": ["fix", "workaround", "mitigation"] },
+    "tokensSaved": { "type": "number" },
+    "references": { "type": "object" }
+  },
+  "additionalProperties": false
+}

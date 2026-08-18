@@ -2,7 +2,7 @@
 name: nim-enforcer
 description: |
   "Enforce, don't instruct" output verify-gate. Before a skill's output ships,
-  run declared strategies (nonempty/json/schema/math/test/lint/command); on fail,
+  run declared strategies (nonempty/json/schema/math/test/lint/command/evidence); on fail,
   block or self-heal (bounded). Unbypassable — runs inside the runtime.
 version: 0.1.0
 author: phamdat721101 (PhamDat / @nxNim9)
@@ -26,3 +26,7 @@ if (!vr.verified) block(vr.checks);
 
 Config (`nim.json` → harness.enforcer): `{ strategies, maxHeals (0-5), mode: "strict"|"warn"|"off" }`.
 CLI: `nim-skill enforce "npm test"`.
+
+Use `{ kind: 'evidence', claimField, evidenceField, forbiddenSource? }` for
+external-state claims. Evidence must contain a non-empty `source`; a configured
+`forbiddenSource` rejects a self-reported success response.

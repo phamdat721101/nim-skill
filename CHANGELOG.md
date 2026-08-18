@@ -3,6 +3,23 @@
 All notable changes to `nim-skill`. Format loosely follows Keep-a-Changelog;
 every layer is additive + config-gated (absent/`false` ⇒ byte-identical bare run).
 
+## [0.11.0] — 2026-08-18 · Ground-Truth Discipline
+
+### Added
+
+- **Costed-action gate** — `harness.guard.costGate` checks recent local
+  `wasted_spend` lessons before a declared `ctx.costedAction` executes.
+  Strict mode blocks; warn mode surfaces the match and continues. Lesson rows
+  now support stable action keys, outcome, and recorded cost.
+- **Evidence verification** — the opt-in `evidence` enforcer strategy requires
+  a claim and an evidence object with an independent non-empty source.
+- **Ambiguous-error diagnosis** — configured expected-error patterns classify
+  unexpected failures as `ambiguous`; an optional, one-shot skill diagnosis
+  probe can reclassify before normal recovery decisions are applied.
+- **Resolution-labelled workrule logs** — new entries render FIX, WORKAROUND,
+  or MITIGATION labels. The CLI warns when the label is omitted during the
+  v0.11 migration; legacy rows remain readable.
+
 ## [0.9.0] — 2026-08-11 · `nim-logcompact` + `nim-propose`
 
 ### Added

@@ -20,7 +20,8 @@ export type VerifyStrategy =
   | { kind: 'test'; command: string }
   | { kind: 'lint'; command: string }
   | { kind: 'command'; command: string }
-  | { kind: 'result'; successPath: string; successValue: boolean; requiredPath?: string };
+  | { kind: 'result'; successPath: string; successValue: boolean; requiredPath?: string }
+  | { kind: 'evidence'; claimField: string; evidenceField: string; forbiddenSource?: string };
 
 /** Bare strategy names usable as config shorthand (param-less ones only). */
 export type VerifyStrategyName = VerifyStrategy['kind'];
@@ -43,7 +44,7 @@ export interface VerifyResult<T = Record<string, unknown>> {
 
 // ─── Error handler ───────────────────────────────────────────────────────────
 
-export type ErrorClass = 'transient' | 'permanent' | 'critical' | 'timeout';
+export type ErrorClass = 'transient' | 'permanent' | 'critical' | 'timeout' | 'ambiguous';
 
 export interface ClassifiedError {
   class: ErrorClass;
@@ -167,6 +168,14 @@ export interface GuardConfig {
    * contract, byte-identical to pre-v0.9 behavior).
    */
   propose?: ProposeConfig;
+  /** Block or warn before repeating a recently logged costly failed action. */
+  costGate?: CostGateConfig | false;
+}
+
+export interface CostGateConfig {
+  tools: string[];
+  lookbackHours?: number;
+  mode?: 'strict' | 'warn';
 }
 
 export interface ProposeConfig {
@@ -191,6 +200,8 @@ export interface ErrorHandlerConfig {
   backoff?: BackoffKind;
   baseDelayMs?: number;
   circuitBreaker?: CircuitBreakerConfig | false;
+  /** JSON-safe regex source strings describing errors this skill expects. */
+  expectedErrorPatterns?: string[];
 }
 
 export interface EnforcerConfig {
@@ -437,6 +448,10 @@ export interface SkillContext {
    * Cooperative: nothing forcibly stops a skill that never checks/awaits it.
    */
   signal?: AbortSignal;
+  /** Optional metadata for a potentially irreversible action guarded by costGate. */
+  costedAction?: { toolName: string; actionKey: string };
+  /** Actual spend already incurred for a costed action, used only for lesson capture. */
+  costIncurredUsd?: number;
   [key: string]: unknown;
 }
 
@@ -446,6 +461,8 @@ export interface SkillDef<I = Record<string, unknown>, O = Record<string, unknow
   description?: string;
   harness: HarnessConfig;
   execute: SkillExecute<I, O>;
+  /** Read-only probe for an unexpected configured error; called at most once per failure. */
+  diagnose?: (ctx: SkillContext, error: unknown) => Promise<unknown> | unknown;
 }
 
 /** The structured envelope every harnessed run returns. */

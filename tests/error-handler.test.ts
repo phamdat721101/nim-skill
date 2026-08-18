@@ -22,6 +22,10 @@ describe('classify', () => {
     expect(isRetryable('transient')).toBe(true);
     expect(isRetryable('permanent')).toBe(false);
   });
+  it('returns ambiguous only for configured unexpected errors', () => {
+    expect(classify(new Error('bad field value')).class).toBe('permanent');
+    expect(classify(new Error('bad field value'), [/^Expected:/]).class).toBe('ambiguous');
+  });
 });
 
 describe('run', () => {
@@ -56,6 +60,13 @@ describe('run', () => {
     const r = await run(fn, policy({ retries: 5 }), { sleep: noSleep });
     expect(fn).toHaveBeenCalledTimes(1);
     expect(r.ok).toBe(false);
+  });
+  it('diagnoses an ambiguous error once before recovery', async () => {
+    const diagnose = vi.fn(() => Object.assign(new Error('connection ETIMEDOUT'), { class: 'transient' as const }));
+    let calls = 0;
+    const r = await run(() => { calls += 1; if (calls === 1) throw new Error('unexpected gateway response'); return 'ok'; }, policy({ retries: 1, backoff: 'none' }), { sleep: noSleep, expectedErrorPatterns: [/^Expected:/], diagnose });
+    expect(r).toEqual({ ok: true, value: 'ok' });
+    expect(diagnose).toHaveBeenCalledOnce();
   });
 
   it('escalates critical errors immediately without retry', async () => {

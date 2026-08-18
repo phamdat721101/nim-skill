@@ -25,6 +25,9 @@ export interface RecoverOptions<T> {
   onEscalate?: (error: ClassifiedError) => void;
   /** Injectable delay (tests pass a no-op). */
   sleep?: (ms: number) => Promise<void>;
+  expectedErrorPatterns?: readonly RegExp[] | null;
+  /** One read-only probe for an error outside the skill's declared failure vocabulary. */
+  diagnose?: (error: unknown) => Promise<unknown> | unknown;
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -67,7 +70,16 @@ export async function run<T>(
       return { ok: true, value };
     } catch (err) {
       attempts += 1;
-      const { class: cls, message } = classify(err);
+      let classified = classify(err, opts.expectedErrorPatterns);
+      if (classified.class === 'ambiguous' && opts.diagnose) {
+        try {
+          const diagnosis = await opts.diagnose(err);
+          classified = classify(diagnosis);
+        } catch (diagnosisError) {
+          classified = classify(diagnosisError);
+        }
+      }
+      const { class: cls, message } = classified;
 
       if (cls === 'critical') {
         const error: ClassifiedError = { class: cls, message, cause: err, retryable: false, attempts };
@@ -82,7 +94,7 @@ export async function run<T>(
           continue;
         }
       }
-      // permanent, or transient with retries exhausted → fallback or classified error.
+      // permanent/ambiguous, or transient with retries exhausted → fallback or classified error.
       if (opts.fallback) {
         return { ok: true, value: await opts.fallback() };
       }

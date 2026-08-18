@@ -21,6 +21,8 @@ export interface AgentSupportEntry {
   tokensSaved?: number;
   /** Non-secret external workflow references for correlating a logged action. */
   references?: { provider: string; agentId?: string; sessionId?: string; runId?: string };
+  /** v0.11 — absent only on legacy rows written before resolution labels existed. */
+  resolutionType?: 'fix' | 'workaround' | 'mitigation';
 }
 
 export const WORKRULE_QUESTIONS: readonly { id: string; question: string }[] = [

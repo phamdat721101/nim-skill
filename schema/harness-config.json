@@ -19,7 +19,22 @@
                 "injection": { "enum": ["off", "strict"] },
                 "taskBudgetUsd": { "type": "number", "exclusiveMinimum": 0 },
                 "taskBudgetTokens": { "type": "integer", "exclusiveMinimum": 0 },
-                "maxDurationMs": { "type": "integer", "exclusiveMinimum": 0 }
+                "maxDurationMs": { "type": "integer", "exclusiveMinimum": 0 },
+                "costGate": {
+                  "oneOf": [
+                    { "const": false },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "tools": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+                        "lookbackHours": { "type": "integer", "minimum": 1, "default": 24 },
+                        "mode": { "enum": ["strict", "warn"], "default": "warn" }
+                      },
+                      "required": ["tools"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
               },
               "not": { "required": ["taskBudgetUsd", "taskBudgetTokens"] },
               "additionalProperties": false
@@ -35,6 +50,7 @@
                 "retries": { "type": "integer", "minimum": 0 },
                 "backoff": { "enum": ["exp-jitter", "fixed", "none"] },
                 "baseDelayMs": { "type": "integer", "minimum": 0 },
+                "expectedErrorPatterns": { "type": "array", "items": { "type": "string", "minLength": 1 } },
                 "circuitBreaker": {
                   "oneOf": [
                     { "const": false },

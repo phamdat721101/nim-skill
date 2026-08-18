@@ -23,7 +23,8 @@ export type GuardReason =
   | 'rate_limited'
   | 'cost_cap_exceeded'
   | 'task_budget_exceeded'
-  | 'proposal_required';
+  | 'proposal_required'
+  | 'cost_gate_blocked';
 
 export class GuardError extends Error {
   constructor(readonly reason: GuardReason, message?: string) {

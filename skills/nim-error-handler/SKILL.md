@@ -1,7 +1,7 @@
 ---
 name: nim-error-handler
 description: |
-  Error-recovery discipline: capture + classify (transient/permanent/critical)
+  Error-recovery discipline: capture + classify (transient/permanent/critical/ambiguous)
   then recover — retry with backoff, circuit-breaker, graceful fallback, or clean
   escalate. Never silently swallows; returns a classified Result.
 version: 0.1.0

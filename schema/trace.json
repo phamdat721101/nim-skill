@@ -14,7 +14,7 @@
     "costEstimate": { "type": "number" },
     "verifyPassed": { "type": "boolean" },
     "healCount": { "type": "integer" },
-    "errorClass": { "enum": ["transient", "permanent", "critical"] },
+    "errorClass": { "enum": ["transient", "permanent", "critical", "timeout", "ambiguous"] },
     "status": { "enum": ["success", "error", "denied"] }
   },
   "additionalProperties": false

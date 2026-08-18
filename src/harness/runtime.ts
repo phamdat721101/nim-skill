@@ -33,7 +33,7 @@ import {
   type ResolvedErrorHandler,
   type ResolvedHarnessConfig,
 } from '../config.js';
-import { createGuard } from '../guard/guard.js';
+import { createGuard, GuardError } from '../guard/guard.js';
 import { checkProposal } from '../guard/propose.js';
 import { basePricePerToken } from '../cache/roi.js';
 import { run, createBreaker } from '../error-handler/recover.js';
@@ -46,6 +46,8 @@ import { createContextHelper } from '../context/index.js';
 import { createMemoryHelper, verifyKey } from '../memory/index.js';
 import { createCacheHelper, computeRoi } from '../cache/index.js';
 import { createLessonsHelper } from '../lessons/index.js';
+import { createLessonsStore } from '../lessons/store.js';
+import { findCostedActionMatch } from '../lessons/cost-gate.js';
 import { createLogCompactHelper } from '../logcompact/index.js';
 import { createGrillHelper } from '../grill/index.js';
 import { createBudgetHelper, WeeklyTokenLedger } from '../guard/budget.js';
@@ -75,6 +77,8 @@ async function execute<O extends Dict>(
     key: skill.name,
     breaker: createBreaker(eh),
     onEscalate,
+    expectedErrorPatterns: eh.expectedErrorPatterns,
+    diagnose: skill.diagnose ? (error) => skill.diagnose!(ctx, error) : undefined,
   });
   if (res.ok) return res.value;
   throw new HarnessExecutionError(res.error);
@@ -355,8 +359,36 @@ export async function runHarnessed<O extends Dict = Dict>(
       ? estimateTokensOf(validated) * basePricePerToken('anthropic')
       : 0;
     guard.checkPolicy({ agentId: ctx.agentId, tool: skill.name, taskCostUsd: preflightCostUsd, taskDescription: skill.name });
+    if (cfg.guard?.costGate && ctx.costedAction && cfg.costGateLessons) {
+      const match = findCostedActionMatch(
+        ctx.costedAction,
+        cfg.guard.costGate,
+        createLessonsStore(cfg.costGateLessons).readAll(),
+      );
+      if (match && cfg.guard.costGate.mode === 'strict') {
+        throw new GuardError('cost_gate_blocked', `recent wasted spend ${match.id} matches '${ctx.costedAction.actionKey}'`);
+      }
+      if (match) console.warn(`nim: cost gate warning — recent wasted spend ${match.id} matches '${ctx.costedAction.actionKey}'`);
+    }
     if (runCtx.context) runCtx.context.budget(estimateTokensOf(validated));
   } catch (err) {
+    if (
+      err instanceof GuardError &&
+      err.reason === 'cost_cap_exceeded' &&
+      cfg.guard?.costGate &&
+      ctx.costedAction &&
+      cfg.costGateLessons
+    ) {
+      createLessonsHelper(cfg.costGateLessons).capture({
+        triggerShape: { toolName: ctx.costedAction.toolName, pathGlob: '*', contentSignal: null, actionKey: ctx.costedAction.actionKey },
+        whatWentWrong: err.message,
+        correctPattern: 'Check the costed-action gate before retrying this action.',
+        severity: 'critical',
+        source: 'auto',
+        outcome: 'wasted_spend',
+        ...(ctx.costIncurredUsd !== undefined ? { costIncurredUsd: ctx.costIncurredUsd } : {}),
+      });
+    }
     emit({
       status: 'denied',
       durationMs: dur(),

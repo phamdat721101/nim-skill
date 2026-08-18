@@ -22,13 +22,21 @@ function globToRegExp(glob: string): RegExp {
   return new RegExp(`^${pattern}$`);
 }
 
+/** Match a concrete value against the same small glob vocabulary used by lessons. */
+export function matchesGlob(value: string, glob: string): boolean {
+  return glob === '*' || glob === '**' || globToRegExp(glob).test(value);
+}
+
 function toolNameMatches(candidateTool: string, loggedTool: string): boolean {
   return loggedTool === '*' || candidateTool === loggedTool;
 }
 
 function pathMatches(candidatePath: string, loggedGlob: string): boolean {
-  if (loggedGlob === '*' || loggedGlob === '**') return true;
-  return globToRegExp(loggedGlob).test(candidatePath);
+  return matchesGlob(candidatePath, loggedGlob);
+}
+
+function actionKeyMatches(candidate: string | undefined, logged: string | undefined): boolean {
+  return candidate === undefined || logged === undefined || candidate === logged;
 }
 
 function contentSignalMatches(candidateSignal: string | null, loggedSignal: string | null): boolean {
@@ -41,6 +49,7 @@ export function matchesShape(candidate: TriggerShape, logged: TriggerShape): boo
   return (
     toolNameMatches(candidate.toolName, logged.toolName) &&
     pathMatches(candidate.pathGlob, logged.pathGlob) &&
-    contentSignalMatches(candidate.contentSignal, logged.contentSignal)
+    contentSignalMatches(candidate.contentSignal, logged.contentSignal) &&
+    actionKeyMatches(candidate.actionKey, logged.actionKey)
   );
 }

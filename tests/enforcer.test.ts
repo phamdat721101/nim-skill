@@ -64,6 +64,13 @@ describe('verifyOrHeal — strategies', () => {
     expect((await verifyOrHeal({ result: { ok: false } }, nested)).verified).toBe(false);
     expect((await verifyOrHeal({}, nested)).verified).toBe(false);
   });
+
+  it('evidence requires a claim plus independently sourced evidence', async () => {
+    const cfg = strict([{ kind: 'evidence', claimField: 'claimed', evidenceField: 'proof', forbiddenSource: 'client-sdk-response' }]);
+    expect((await verifyOrHeal({ claimed: true, proof: { source: 'independent-ledger-read' } }, cfg)).verified).toBe(true);
+    expect((await verifyOrHeal({ claimed: true, proof: { source: 'client-sdk-response' } }, cfg)).verified).toBe(false);
+    expect((await verifyOrHeal({ claimed: true, proof: {} }, cfg)).checks[0]?.reason).toMatch(/non-empty source/);
+  });
 });
 
 describe('verifyOrHeal — self-heal loop', () => {

@@ -14,12 +14,13 @@ import { existsSync, readFileSync, appendFileSync, mkdirSync, writeFileSync } fr
 import { dirname } from 'node:path';
 import type { AgentSupportEntry } from './types.js';
 
-const HEADER = '# Agent support log\n\n> How nim-skill\'s own primitives helped THIS project\'s agent work — appended by `nim-skill workrule log`, one row per primitive-assisted moment. Gitignored (same as every other `.nim/*` file).\n\n| at | primitive | effect | tokensSaved | references |\n|---|---|---|---|---|\n';
+const HEADER = '# Agent support log\n\n> How nim-skill\'s own primitives helped THIS project\'s agent work — appended by `nim-skill workrule log`, one row per primitive-assisted moment. Gitignored (same as every other `.nim/*` file).\n\n| at | resolution | primitive | effect | tokensSaved | references |\n|---|---|---|---|---|---|\n';
 
 function toRow(e: AgentSupportEntry): string {
   const effect = e.effect.replace(/\|/g, '\\|');
   const references = e.references ? JSON.stringify(e.references).replace(/\|/g, '\\|') : '';
-  return `| ${e.at} | ${e.primitive} | ${effect} | ${e.tokensSaved ?? ''} | ${references} |\n`;
+  const resolution = e.resolutionType ? `[${e.resolutionType.toUpperCase()}]` : '[LEGACY]';
+  return `| ${e.at} | ${resolution} | ${e.primitive} | ${effect} | ${e.tokensSaved ?? ''} | ${references} |\n`;
 }
 
 export interface WorkruleStoreConfig {
@@ -44,8 +45,14 @@ function parseRows(md: string): AgentSupportEntry[] {
   const rows: AgentSupportEntry[] = [];
   for (const line of md.split('\n')) {
     const cells = splitRow(line);
-    if (!cells || (cells.length !== 4 && cells.length !== 5)) continue;
-    const [at, primitive, effect, tokensSavedRaw, referencesRaw] = cells;
+    if (!cells || (cells.length !== 4 && cells.length !== 5 && cells.length !== 6)) continue;
+    const [at, second, third, fourth, fifth, sixth] = cells;
+    const modern = cells.length === 6;
+    const resolutionRaw = modern ? second : undefined;
+    const primitive = modern ? third! : second;
+    const effect = modern ? fourth! : third;
+    const tokensSavedRaw = modern ? fifth : fourth;
+    const referencesRaw = modern ? sixth : fifth;
     if (!at || at === 'at' || at.startsWith('---') || !primitive || !effect) continue;
     const tokensSaved = tokensSavedRaw ? Number(tokensSavedRaw) : undefined;
     let references: AgentSupportEntry['references'];
@@ -54,7 +61,8 @@ function parseRows(md: string): AgentSupportEntry[] {
     } catch {
       references = undefined;
     }
-    rows.push({ at, primitive, effect, ...(tokensSaved !== undefined && !Number.isNaN(tokensSaved) ? { tokensSaved } : {}), ...(references ? { references } : {}) });
+    const resolutionType = resolutionRaw?.match(/^\[(FIX|WORKAROUND|MITIGATION)\]$/)?.[1]?.toLowerCase() as AgentSupportEntry['resolutionType'];
+    rows.push({ at, primitive, effect, ...(resolutionType ? { resolutionType } : {}), ...(tokensSaved !== undefined && !Number.isNaN(tokensSaved) ? { tokensSaved } : {}), ...(references ? { references } : {}) });
   }
   return rows;
 }

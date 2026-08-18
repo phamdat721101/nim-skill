@@ -51,6 +51,7 @@ session.
 nim-skill workrule check                        # print the 6-question checklist
 nim-skill workrule log --primitive nim-cache \
   --effect "avoided reprocessing 40 lines of unchanged AGENTS.md" \
+  --resolution-type fix \
   --tokens-saved 1800                            # append a tracked-memory entry
 ```
 

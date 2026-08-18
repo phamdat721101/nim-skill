@@ -47,9 +47,16 @@ const verifyStrategySchema: z.ZodType<VerifyStrategy> = z.union([
   z.object({ kind: z.literal('lint'), command: z.string() }),
   z.object({ kind: z.literal('command'), command: z.string() }),
   z.object({ kind: z.literal('result'), successPath: z.string().min(1), successValue: z.boolean(), requiredPath: z.string().min(1).optional() }),
+  z.object({ kind: z.literal('evidence'), claimField: z.string().min(1), evidenceField: z.string().min(1), forbiddenSource: z.string().min(1).optional() }),
 ]);
 
 const strategyName = z.enum(['nonempty', 'json', 'schema', 'math', 'test', 'lint', 'command', 'result']);
+
+const costGateSchema = z.object({
+  tools: z.array(z.string().min(1)).min(1),
+  lookbackHours: z.number().int().positive().optional(),
+  mode: z.enum(['strict', 'warn']).optional(),
+});
 
 const proposeSchema = z.object({
   require: z.boolean().optional(),
@@ -69,6 +76,7 @@ const guardSchema = z
     weeklyTokenBudget: z.number().int().positive().optional(),
     weeklyBudgetStore: z.string().optional(),
     propose: proposeSchema.optional(),
+    costGate: z.union([costGateSchema, z.literal(false)]).optional(),
   })
   .refine((c) => !(c.taskBudgetUsd !== undefined && c.taskBudgetTokens !== undefined), {
     message: 'guard: taskBudgetUsd and taskBudgetTokens are mutually exclusive — set at most one',
@@ -86,6 +94,7 @@ const errorHandlerSchema = z.object({
   backoff: z.enum(['exp-jitter', 'fixed', 'none']).optional(),
   baseDelayMs: z.number().int().nonnegative().optional(),
   circuitBreaker: z.union([circuitBreakerSchema, z.literal(false)]).optional(),
+  expectedErrorPatterns: z.array(z.string().min(1)).optional(),
 });
 
 const enforcerSchema = z.object({
@@ -323,6 +332,7 @@ export interface ResolvedGuard {
   weeklyBudgetStore: string;
   /** v0.9 — resolved propose gate. null when `propose.require` is not true (rollback contract — no check at all). */
   propose: { approvalTtlMs: number; proposalsDir: string } | null;
+  costGate: { tools: string[]; lookbackHours: number; mode: 'strict' | 'warn' } | null;
 }
 
 export interface ResolvedErrorHandler {
@@ -330,6 +340,7 @@ export interface ResolvedErrorHandler {
   backoff: ErrorHandlerConfig['backoff'];
   baseDelayMs: number;
   circuitBreaker: { failN: number; cooldownMs: number; windowSize: number } | null;
+  expectedErrorPatterns: RegExp[] | null;
 }
 
 export interface ResolvedEnforcer {
@@ -405,6 +416,8 @@ export interface ResolvedHarnessConfig {
   lessons: ResolvedLessons | null;
   logCompact: ResolvedLogCompact | null;
   grill: ResolvedGrillConfig | null;
+  /** Lessons storage used by costGate even when the runtime lessons helper is not injected. */
+  costGateLessons: ResolvedLessons | null;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────
@@ -444,6 +457,14 @@ function resolveGuard(c: GuardConfig): ResolvedGuard {
             proposalsDir: c.propose.proposalsDir ?? '.nim/proposals',
           }
         : null,
+    costGate:
+      c.costGate
+        ? {
+            tools: c.costGate.tools,
+            lookbackHours: c.costGate.lookbackHours ?? 24,
+            mode: c.costGate.mode ?? 'warn',
+          }
+        : null,
   };
 }
 
@@ -461,6 +482,7 @@ function resolveErrorHandler(c: ErrorHandlerConfig): ResolvedErrorHandler {
             cooldownMs: cb?.cooldownMs ?? 60_000,
             windowSize: cb?.windowSize ?? 20,
           },
+    expectedErrorPatterns: c.expectedErrorPatterns?.map((pattern) => new RegExp(pattern)) ?? null,
   };
 }
 
@@ -557,9 +579,13 @@ function resolveGrillConfig(c: GrillConfig): ResolvedGrillConfig {
  */
 export function resolveConfig(input: HarnessConfig = {}): ResolvedHarnessConfig {
   const parsed = harnessSchema.parse(input);
+  if (parsed.guard && parsed.guard.costGate && parsed.lessons === false) {
+    throw new Error('guard.costGate requires lessons storage; remove lessons:false or configure lessons');
+  }
   const enforcer = parsed.enforcer ? resolveEnforcer(parsed.enforcer) : null;
+  const guard = parsed.guard ? resolveGuard(parsed.guard) : null;
   return {
-    guard: parsed.guard ? resolveGuard(parsed.guard) : null,
+    guard,
     errorHandler: parsed.errorHandler ? resolveErrorHandler(parsed.errorHandler) : null,
     enforcer: enforcer && enforcer.mode === 'off' ? null : enforcer,
     monitor: parsed.monitor ? resolveMonitor(parsed.monitor) : null,
@@ -570,6 +596,7 @@ export function resolveConfig(input: HarnessConfig = {}): ResolvedHarnessConfig 
     lessons: parsed.lessons ? resolveLessons(parsed.lessons) : null,
     logCompact: parsed.logCompact ? resolveLogCompact(parsed.logCompact) : null,
     grill: parsed.grill ? resolveGrillConfig(parsed.grill) : null,
+    costGateLessons: guard?.costGate ? resolveLessons(parsed.lessons || {}) : null,
   };
 }
 

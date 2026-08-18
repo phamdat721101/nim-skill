@@ -22,7 +22,7 @@ function messageOf(err: unknown): string {
   }
 }
 
-export function classify(err: unknown): { class: ErrorClass; message: string } {
+export function classify(err: unknown, expectedErrorPatterns?: readonly RegExp[] | null): { class: ErrorClass; message: string } {
   const message = messageOf(err);
 
   // Explicit hint on the error object takes precedence.
@@ -30,6 +30,11 @@ export function classify(err: unknown): { class: ErrorClass; message: string } {
   if (hint === 'transient' || hint === 'permanent' || hint === 'critical' || hint === 'timeout') {
     return { class: hint, message };
   }
+
+  if (expectedErrorPatterns && !expectedErrorPatterns.some((pattern) => {
+    pattern.lastIndex = 0;
+    return pattern.test(message);
+  })) return { class: 'ambiguous', message };
 
   if (CRITICAL.test(message)) return { class: 'critical', message };
   if (TRANSIENT.test(message)) return { class: 'transient', message };

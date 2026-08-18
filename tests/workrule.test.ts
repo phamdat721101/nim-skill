@@ -38,6 +38,14 @@ describe('createWorkruleHelper', () => {
     expect(() => new Date(entry.at).toISOString()).not.toThrow();
   });
 
+  it('renders and reads back a typed resolution label while accepting legacy rows', () => {
+    const helper = createWorkruleHelper({ logFile: TEST_LOG });
+    helper.log({ primitive: 'nim-guard', effect: 'blocked repeated spend', resolutionType: 'mitigation' });
+    const raw = readFileSync(TEST_LOG, 'utf8');
+    expect(raw).toContain('[MITIGATION]');
+    expect(helper.history()[0]?.resolutionType).toBe('mitigation');
+  });
+
   it('history() reads back exactly what was logged, in order', () => {
     const helper = createWorkruleHelper({ logFile: TEST_LOG });
     helper.log({ primitive: 'nim-guard', effect: 'blocked a cost-cap breach' });

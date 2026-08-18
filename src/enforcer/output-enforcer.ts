@@ -93,6 +93,16 @@ function runStrategy(
         reason: pass ? undefined : `expected ${s.successPath} to equal ${JSON.stringify(s.successValue)}`,
       };
     }
+    case 'evidence': {
+      const claim = get(output, s.claimField);
+      const evidence = get(output, s.evidenceField);
+      if (!claim) return { strategy: `evidence(${s.claimField}->${s.evidenceField})`, pass: false, reason: `claim '${s.claimField}' is missing or empty` };
+      if (!evidence || typeof evidence !== 'object') return { strategy: `evidence(${s.claimField}->${s.evidenceField})`, pass: false, reason: `claim '${s.claimField}' has no attached '${s.evidenceField}' evidence object` };
+      const source = (evidence as Record<string, unknown>).source;
+      if (typeof source !== 'string' || source.trim() === '') return { strategy: `evidence(${s.claimField}->${s.evidenceField})`, pass: false, reason: `evidence '${s.evidenceField}' must include a non-empty source` };
+      const pass = !s.forbiddenSource || source !== s.forbiddenSource;
+      return { strategy: `evidence(${s.claimField}->${s.evidenceField})`, pass, reason: pass ? undefined : `evidence for '${s.claimField}' is self-sourced from '${s.forbiddenSource}', not independent` };
+    }
     case 'math': {
       const items = get(output, s.itemsField);
       const total = Number(get(output, s.totalField));

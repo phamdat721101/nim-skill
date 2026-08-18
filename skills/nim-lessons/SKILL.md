@@ -31,6 +31,11 @@ in `nim.json` (unlike `nim-workspace`, a top-level sibling key), because
 { "harness": { "lessons": { "store": ".nim/lessons.jsonl", "ttlMs": 7776000000 } } }
 ```
 
+For costly actions, pair lessons with `harness.guard.costGate` and pass
+`ctx.costedAction: { toolName, actionKey }` to `runHarnessed()`. A recent
+matching `wasted_spend` lesson blocks in strict mode or warns in warn mode.
+Use a stable failure-shape key, never a one-off quote, nonce, or transaction id.
+
 ```ts
 import { runHarnessed } from 'nim-skill';
 

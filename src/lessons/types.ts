@@ -14,6 +14,8 @@ export interface TriggerShape {
   toolName: string;
   pathGlob: string;
   contentSignal: string | null;
+  /** Stable identity for a non-file action, such as `payments.settle:premium`. */
+  actionKey?: string;
 }
 
 export interface Lesson {
@@ -24,4 +26,6 @@ export interface Lesson {
   correctPattern: string;
   severity: 'info' | 'warning' | 'critical';
   source: 'manual' | 'auto';
+  outcome?: 'blocked' | 'wasted_spend' | 'success';
+  costIncurredUsd?: number;
 }
