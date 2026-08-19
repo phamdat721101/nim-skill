@@ -64,6 +64,8 @@ export { createContextHelper, ContextBudgetError } from './context/index.js';
 export { createMemoryHelper, verifyKey } from './memory/index.js';
 export { toTerminal, assertTerminal, SerializeGuardError, type TerminalFormat } from './serialize/index.js';
 export { createCacheHelper, computeRoi, pickAdapter, parseUsage, type ParsedUsage, type CacheHelperHandle } from './cache/index.js';
+export { createWorkspaceGuard, type WorkspaceGuard, type WorkspaceCheckResult, type WorkspaceProposal, type WorkspaceRecommendation } from './workspace/index.js';
+export { assessWorkspace, initializeWorkspace, featurePath, createFeatureBrief, appendHandoff, type WorkspaceAssessment, type SetupReport, type HandoffInput, type WorkspaceKind } from './workspace/bootstrap.js';
 
 // v0.6 — workrule
 export { createWorkruleHelper, WORKRULE_QUESTIONS, type AgentSupportEntry } from './workrule/index.js';

@@ -14,6 +14,8 @@ license: MIT
 tier: primitive
 parent: nim-skill
 when_to_use: |
+  - Start a greenfield or brownfield repository with a safe three-tier agent workspace and local harness defaults.
+  - Create a feature brief or append a durable handoff before an agent changes tasks or stops.
   - Catch content whose tech-stack signal doesn't match the workspace's declared stack before it's written (e.g. Java/Spring analysis landing in a TypeScript/web3 research folder).
   - Check whether a proposed file/skill overlaps something that already exists before creating a near-duplicate.
   - Get warned when a workspace's own liveness/status file has gone stale past its declared refresh cadence.
@@ -21,6 +23,26 @@ install: npx github:phamdat721101/nim-skill add nim-workspace
 ---
 
 # nim-workspace
+
+## Agent-ready workspace flow
+
+```bash
+nim-skill workspace init                 # create only missing harness files
+nim-skill workspace init --dry-run       # inspect the safe creation plan
+nim-skill workspace feature "payments"   # create docs/features/payments.md once
+nim-skill workspace handoff \
+  --goal "implement payments" --output "tests pass" --next "open PR"
+```
+
+`init` assesses standard project manifests and creates only absent artifacts:
+`CONSTITUTION.md`, `docs/features/`, `docs/state/active_session.md`, and
+`nim.json`. It never overwrites an existing constitution, feature brief, state
+file, or configuration. Inferred facts are marked `REVIEW REQUIRED` for a human.
+
+`handoff` appends a timestamped snapshot to `active_session.md`; the final
+snapshot is the current working state, so prior handoffs remain recoverable.
+The generated `nim.json` enables strict non-empty output verification, local
+memory, compact context/log handling, workspace liveness, and the work-rule log.
 
 ```bash
 nim-skill workspace check <path>    # one-shot check against a proposed file (for scripting/CI)

@@ -48,6 +48,7 @@ describe('resolveTargetDirs', () => {
   });
   it('explicit --host maps to its dir', () => {
     expect(resolveTargetDirs('kiro')).toEqual([HOST_DIRS.kiro]);
+    expect(resolveTargetDirs('codex')).toEqual([HOST_DIRS.codex]);
   });
   it('returns null for an unknown host', () => {
     expect(resolveTargetDirs('nope')).toBeNull();

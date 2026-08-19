@@ -25,6 +25,7 @@ export const HOST_DIRS: Record<string, string> = {
   claude: CLAUDE_DIR,
   kiro: join(homedir(), '.kiro', 'skills'),
   cursor: join(homedir(), '.cursor', 'skills'),
+  codex: join(homedir(), '.codex', 'skills'),
 };
 
 /** Resolve the target skills directory from an explicit dir or a host name. */

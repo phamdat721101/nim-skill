@@ -8,7 +8,7 @@ description: |
   hook-native workspace/lessons/workrule primitives that run OUTSIDE
   runHarnessed(), gating a proposed Write/Edit before it lands, plus v0.9
   nim-logcompact (subprocess output compaction) and nim-propose (a plan-first
-  approval gate on nim-guard with owner-profile learning). Composes 13
+  approval gate on nim-guard with owner-profile learning). Composes 15
   installable primitives. Zero network on the default path. MIT.
 version: 0.10.0
 author: phamdat721101 (PhamDat / @nxNim9)
@@ -21,6 +21,7 @@ when_to_use: |
   - Cut token cost: context budget, verify/priors cache, provider prompt-caching (45–80% input-cost cut).
   - Lint a memory file, meter a tool-disclosure tax, tighten config for a weaker model tier.
   - Gate a proposed Write/Edit against workspace identity/existence + a working-rule self-check.
+  - Start any repository with a three-tier constitution, feature briefs, and append-only working handoffs.
   - Interrogate a builder's design plan (x402/xls65/custom) and compile an enforcer-verified PRD.
   - Add drop-in reliability without rewriting your agent into a framework.
   - Keywords: harness, verify output, block bad output, retry, circuit breaker, cost cap, agentjacking, context caching, token savings, memory-file lint, tool-disclosure tax, model tier, workspace guard, working rule, grill interrogation, PRD compile.
@@ -111,19 +112,21 @@ nim-skill run "npm test" --enforce --monitor   # run a command inside the harnes
 nim-skill enforce "npm test"                    # unbypassable verify-gate (exit 1 on fail)
 nim-skill monitor                               # local trace dashboard
 nim-skill add all                               # install every primitive skill
+nim-skill workspace init                        # safely bootstrap an agent-ready project
+nim-skill workspace handoff --goal "..." --output "..." --next "..."
 ```
 
 ## Hosts
 
 Installable into any SKILL.md-reading agent host. `install` auto-detects your hosts
-(`~/.claude`, `~/.kiro`, `~/.cursor`) and copies all skills into each:
+(`~/.claude`, `~/.kiro`, `~/.cursor`, `~/.codex`) and copies all skills into each:
 
 ```bash
 # zero-config — detects installed hosts and installs everything
 npx github:phamdat721101/nim-skill install
 
 # target one host explicitly
-nim-skill install --host claude        # or --host kiro | --host cursor
+nim-skill install --host claude        # or --host kiro | cursor | codex
 
 # specific primitives / custom directory
 nim-skill add nim-enforcer --dir /path/to/skills
@@ -132,8 +135,8 @@ nim-skill add nim-enforcer --dir /path/to/skills
 git clone https://github.com/phamdat721101/nim-skill ~/.claude/skills/nim-skill
 ```
 
-After install, the host discovers each primitive and can invoke the CLI, or you import the
-library directly. Codex (no SKILL.md system): use the CLI in scripts/CI or import the library.
+After install, the host discovers each primitive where it supports skill discovery; the CLI
+and library interfaces remain portable for every host, including Codex automation.
 
 ## Input requirements
 

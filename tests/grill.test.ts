@@ -191,11 +191,12 @@ describe('createGrillStore', () => {
   it('returns latest() as the most recently created session', () => {
     const store = createGrillStore(tmpDir);
     const questions = loadQuestionsForDomain('custom');
-    store.create('x402', questions);
+    const first = store.create('x402', questions);
     const second = store.create('xls65', questions);
 
     const latest = store.latest();
     expect(latest).toBeDefined();
+    expect(second.startedAt > first.startedAt).toBe(true);
     expect(latest!.id).toBe(second.id);
   });
 

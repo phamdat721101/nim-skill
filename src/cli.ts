@@ -33,6 +33,7 @@ import { toKiroCliDecision } from './hook-adapters/kiro-cli.js';
 import { readMcpConfig, readSkillsDir } from './index-meter/adapters.js';
 import { detectTier } from './profile/index.js';
 import { tightenFor } from './profile/tiers.js';
+import { appendHandoff, createFeatureBrief, initializeWorkspace } from './workspace/bootstrap.js';
 import type { HarnessConfig, SkillDef } from './harness/types.js';
 
 function runShell(cmd: string): { code: number; stdout: string; stderr: string } {
@@ -166,7 +167,7 @@ function performInstall(targets: string[], opts: { host?: string; dir?: string; 
 program
   .command('add')
   .argument('[targets...]', `skills to install (default: all): ${PRIMITIVES.join(', ')} | all | nim-skill`)
-  .option('--host <host>', 'target host: claude | kiro | cursor')
+  .option('--host <host>', 'target host: claude | kiro | cursor | codex')
   .option('--dir <path>', 'explicit host skills directory (overrides --host)')
   .option('--lean', 'install lean manifests (omit reference sections) for hosts without progressive disclosure')
   .description('Install skill manifests into a host skills directory so any agent can discover them.')
@@ -174,7 +175,7 @@ program
 
 program
   .command('install')
-  .option('--host <host>', 'target host: claude | kiro | cursor')
+  .option('--host <host>', 'target host: claude | kiro | cursor | codex')
   .option('--dir <path>', 'explicit host skills directory (overrides --host)')
   .option('--lean', 'install lean manifests (omit reference sections)')
   .description('Install ALL nim-skill skills into detected agent hosts (zero-config alias of `add all`).')
@@ -283,6 +284,63 @@ profileCmd
   });
 
 const workspaceCmd = program.command('workspace').description('Hook-native existence + identity + subject-matter + staleness gate for a proposed Write/Edit.');
+
+workspaceCmd
+  .command('init')
+  .argument('[dir]', 'project directory to initialize', '.')
+  .option('--dry-run', 'report missing artifacts without writing them')
+  .description('Create an agent-ready three-tier workspace without overwriting existing project state.')
+  .action(async (dir: string, opts: { dryRun?: boolean }) => {
+    try {
+      const report = initializeWorkspace(dir, opts.dryRun ?? false);
+      const verified = await verifyOrHeal(report as unknown as Record<string, unknown>, {
+        strategies: [{ kind: 'schema', required: ['kind', 'created', 'skipped', 'assessment', 'reviewRequired'] }, { kind: 'nonempty' }],
+        maxHeals: 0,
+        mode: 'strict',
+      });
+      if (!verified.verified) throw new Error(`setup report failed verification: ${verified.checks.map((check) => check.reason).filter(Boolean).join('; ')}`);
+      process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+    } catch (err) {
+      process.stderr.write(`nim: ${(err as Error).message}\n`);
+      process.exitCode = 1;
+    }
+  });
+
+workspaceCmd
+  .command('feature')
+  .argument('<name>', 'feature name for the vertical-slice brief')
+  .option('--dir <dir>', 'project directory', '.')
+  .option('--dry-run', 'report the target path without writing it')
+  .description('Create a missing feature-state brief; existing briefs are left unchanged.')
+  .action((name: string, opts: { dir: string; dryRun?: boolean }) => {
+    try {
+      const result = createFeatureBrief(opts.dir, name, opts.dryRun ?? false);
+      process.stdout.write(`nim: ${result.created ? 'created' : 'skipped existing'} ${result.path}\n`);
+    } catch (err) {
+      process.stderr.write(`nim: ${(err as Error).message}\n`);
+      process.exitCode = 1;
+    }
+  });
+
+workspaceCmd
+  .command('handoff')
+  .requiredOption('--goal <text>', 'current task goal')
+  .requiredOption('--output <text>', 'latest output or result')
+  .requiredOption('--next <text>', 'explicit next steps for the next agent')
+  .option('--blocker <text>', 'current blocker, if any')
+  .option('--attempted <text...>', 'one or more attempted solutions')
+  .option('--dir <dir>', 'project directory', '.')
+  .option('--dry-run', 'validate the handoff without appending it')
+  .description('Append an immutable working-state handoff; the last snapshot is authoritative.')
+  .action((opts: { goal: string; output: string; next: string; blocker?: string; attempted?: string[]; dir: string; dryRun?: boolean }) => {
+    try {
+      const result = appendHandoff(opts.dir, opts, opts.dryRun ?? false);
+      process.stdout.write(`nim: ${opts.dryRun ? 'validated' : 'appended'} ${result.path}\n`);
+    } catch (err) {
+      process.stderr.write(`nim: ${(err as Error).message}\n`);
+      process.exitCode = 1;
+    }
+  });
 
 workspaceCmd
   .command('check')

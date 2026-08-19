@@ -17,6 +17,16 @@ import { existsSync, readFileSync, appendFileSync, readdirSync, mkdirSync, write
 import { join, resolve } from 'node:path';
 import type { GrillSession, GrillQuestion, GrillAnswer, GrillPRD } from './types.js';
 
+// `latest()` orders sessions by this timestamp. Make sequential creates
+// monotonic even when the system clock has only millisecond resolution.
+let lastSessionStartedAtMs = 0;
+
+function nextSessionStartedAt(): string {
+  const now = Date.now();
+  lastSessionStartedAtMs = Math.max(now, lastSessionStartedAtMs + 1);
+  return new Date(lastSessionStartedAtMs).toISOString();
+}
+
 // ─── JSONL event shapes ───────────────────────────────────────────────────────
 
 type SessionEvent =
@@ -105,7 +115,7 @@ export function createGrillStore(dir: string): GrillStore {
   return {
     create(domain, questions): GrillSession {
       ensureDir();
-      const startedAt = new Date().toISOString();
+      const startedAt = nextSessionStartedAt();
       const id = sessionIdFor(domain, startedAt);
       const branches = [...new Set(questions.map((q) => q.branch))];
       const session: GrillSession = {

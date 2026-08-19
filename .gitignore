@@ -8,3 +8,4 @@ docs/
 .env.local
 .nim/
 *.jsonl
+.gstack/
