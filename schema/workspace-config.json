@@ -24,7 +24,29 @@
     },
     "livenessFile": { "type": "string", "description": "e.g. \"_brain/product-state.md\"" },
     "livenessCadence": { "type": "string", "description": "simple grammar, not a cron string, e.g. \"Mon,Wed,Fri\"" },
-    "mode": { "type": "string", "enum": ["warn", "strict", "off"], "default": "warn" }
+    "mode": { "type": "string", "enum": ["warn", "strict", "off"], "default": "warn" },
+    "deliver": {
+      "type": "object",
+      "description": "Strict local pre/post-delivery gate. Contracts list only names and evidence, never secret values.",
+      "properties": {
+        "mode": { "type": "string", "enum": ["warn", "strict", "off"], "default": "strict" },
+        "briefDir": { "type": "string", "default": "docs/features" },
+        "requireWorkrule": { "type": "boolean", "default": true },
+        "profiles": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["contract"],
+            "properties": {
+              "contract": { "type": "string" },
+              "configFiles": { "type": "array", "items": { "type": "string" } },
+              "commands": { "type": "array", "items": { "type": "string" } },
+              "evidenceFile": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
   },
   "additionalProperties": false
 }

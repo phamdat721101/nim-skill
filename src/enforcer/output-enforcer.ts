@@ -14,6 +14,7 @@
 
 import { spawnSync } from 'node:child_process';
 import type { VerifyStrategy, CheckResult, VerifyResult, EnforceMode } from '../harness/types.js';
+import { checkEnvironmentContract } from '../deliver/index.js';
 
 type ReExecute = (feedback: string) => Promise<Record<string, unknown>> | Record<string, unknown>;
 
@@ -102,6 +103,10 @@ function runStrategy(
       if (typeof source !== 'string' || source.trim() === '') return { strategy: `evidence(${s.claimField}->${s.evidenceField})`, pass: false, reason: `evidence '${s.evidenceField}' must include a non-empty source` };
       const pass = !s.forbiddenSource || source !== s.forbiddenSource;
       return { strategy: `evidence(${s.claimField}->${s.evidenceField})`, pass, reason: pass ? undefined : `evidence for '${s.claimField}' is self-sourced from '${s.forbiddenSource}', not independent` };
+    }
+    case 'envContract': {
+      const result = checkEnvironmentContract(s.root ?? process.cwd(), s.contract, s.configFiles);
+      return { ...result, strategy: `envContract(${s.contract})` };
     }
     case 'math': {
       const items = get(output, s.itemsField);

@@ -70,6 +70,10 @@ export { assessWorkspace, initializeWorkspace, featurePath, createFeatureBrief, 
 // v0.6 — workrule
 export { createWorkruleHelper, WORKRULE_QUESTIONS, type AgentSupportEntry } from './workrule/index.js';
 
+// v1.1 — product-owner delivery contract
+export { deliveryBriefTemplate, runDeliveryCheck, checkEnvironmentContract } from './deliver/index.js';
+export type { DeliveryConfig, DeliveryProfileConfig, DeliveryPhase, DeliveryReport, DeliveryCommandRunner } from './deliver/index.js';
+
 // v1.0 — grill
 export {
   createGrillHelper,

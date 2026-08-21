@@ -1,7 +1,7 @@
 /**
  * src/workrule/types.ts
  * -----------------------
- * `nim-workrule` — the six-rule working-checklist an agent runs against its
+ * `nim-workrule` — the delivery-aware working checklist an agent runs against its
  * OWN editing behavior (not the content it produces — that's nim-baseline's
  * job). WR-06's tracked-memory entry is the one rule with a concrete
  * artifact; the other five are printed as self-check questions, never
@@ -32,4 +32,5 @@ export const WORKRULE_QUESTIONS: readonly { id: string; question: string }[] = [
   { id: 'WR-04', question: 'Partial reads, no new files unless essential — did I read only the relevant section, and check for an existing home before creating a new file?' },
   { id: 'WR-05', question: 'High quality, high performance, simple to deploy — config-gated, no new required dependency, byte-identical-off preserved?' },
   { id: 'WR-06', question: 'Tracked memory — did I log which nim-skill primitive helped this task and, where measurable, the token/context saving?' },
+  { id: 'WR-07', question: 'Pre-delivery contract — did I verify secret bindings, secure TLS hostname policy, collateral dependency behavior, and post-delivery evidence before calling this deliverable complete?' },
 ];

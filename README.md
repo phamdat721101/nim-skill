@@ -143,6 +143,10 @@ optional helpers available to execute():
 | Save a durable handoff | `nim-skill workspace handoff --goal ... --output ... --next ...` |
 | Check a proposed write | `nim-skill workspace check path/to/file` |
 | Require an approved plan | `nim-skill propose "task"` then `nim-skill propose --approve <hash>` |
+| Create a delivery-ready feature proposal | `nim-skill deliver propose "task"` |
+| Run the pre-delivery gate | `nim-skill deliver check --profile qa --brief docs/features/<feature>.md --phase pre` |
+| Record deployment evidence | `nim-skill deliver record --profile qa --evidence qa-evidence.json` |
+| Run the post-delivery gate | `nim-skill deliver check --profile qa --brief docs/features/<feature>.md --phase post` |
 | Self-check an editing session | `nim-skill workrule check` |
 
 ## Workspace tutorial
@@ -164,6 +168,80 @@ facts as `REVIEW REQUIRED`. For a greenfield repository, it creates a reviewable
 starter constitution. In both cases, a human confirms the constitution before
 feature work begins.
 
+## Deliver a feature to an end client
+
+`nim-deliver` makes “done” mean more than a passing build. It requires a client
+outcome, an explanation of why the selected approach was chosen, explicit
+environment assumptions, verification, and (after release) independently sourced
+evidence that the delivered feature is healthy.
+
+Start with a delivery brief and human approval:
+
+```bash
+nim-skill deliver propose "Customer payment notifications"
+# Fill in docs/features/customer-payment-notifications.md.
+nim-skill propose --approve <proposal-id>
+```
+
+Enable a profile in `nim.json`. Contracts are JSON and contain only names and
+policy—not secret values. TLS hostname verification may use a provider endpoint
+or a documented certificate-SAN policy; disabling it always fails the gate.
+
+```jsonc
+{
+  "workspace": {
+    "deliver": {
+      "mode": "strict",
+      "briefDir": "docs/features",
+      "requireWorkrule": true,
+      "profiles": {
+        "qa": {
+          "contract": ".nim/deliver/qa-contract.json",
+          "configFiles": ["config/application-qa.yml"],
+          "commands": ["npm test"],
+          "evidenceFile": ".nim/deliver/qa-evidence.json"
+        }
+      }
+    }
+  }
+}
+```
+
+Example `.nim/deliver/qa-contract.json`:
+
+```json
+{
+  "secrets": [{ "key": "APP_REDIS_PASSWORD", "binding": "app.redis.password" }],
+  "tls": [{ "host": "redis.cache.amazonaws.com", "ssl": true, "verification": "provider-endpoint" }],
+  "collateral": []
+}
+```
+
+Before handoff, add a WR-06/WR-07 support-log entry after the delivery primitive
+has meaningfully helped the task, then run the pre-delivery gate:
+
+```bash
+nim-skill workrule log --primitive nim-deliver \
+  --effect "verified the QA delivery contract" --resolution-type mitigation
+nim-skill deliver check --profile qa \
+  --brief docs/features/customer-payment-notifications.md --phase pre
+```
+
+After deployment, save independent evidence rather than a self-reported success
+claim. The evidence JSON must include `source`, `buildId`, `target`, `timestamp`,
+`health`, and `clientAcceptance`.
+
+```bash
+nim-skill deliver record --profile qa --evidence qa-evidence.json
+nim-skill deliver check --profile qa \
+  --brief docs/features/customer-payment-notifications.md --phase post
+```
+
+Unchanged passing inputs use the existing local memory cache. Command output is
+compacted and secret-redacted before it is included in a failure report. The gate
+never reads cloud secret values, calls DNS, deploys software, or contacts external
+services by default.
+
 ## Installable primitives
 
 | Primitive | Use it for |
@@ -179,10 +257,11 @@ feature work begins.
 | `nim-profile` | Model-tier detection and reliability tightening. |
 | `nim-workspace` | Workspace bootstrap plus identity, existence, and liveness checks. |
 | `nim-lessons` | Local lessons from similarly shaped failed actions. |
-| `nim-workrule` | Six-rule editing self-check and local support log. |
+| `nim-workrule` | Seven-rule editing and pre-delivery self-check with a local support log. |
 | `nim-logcompact` | Error-preserving shell and tool-output compaction. |
 | `nim-propose` | Explicit pause, human approval, and owner-profile plan scaffolding. |
 | `nim-grill` | Structured design interrogation and enforcer-verified PRD compilation. |
+| `nim-deliver` | Product-owner delivery contract, rationale, environment readiness, and post-delivery proof. |
 
 `ctx.memory` is a harness helper, not a separate installable skill. Enable it for
 the local verify-result cache and episodic priors shown in the configuration example.

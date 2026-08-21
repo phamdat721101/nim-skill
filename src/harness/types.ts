@@ -21,7 +21,9 @@ export type VerifyStrategy =
   | { kind: 'lint'; command: string }
   | { kind: 'command'; command: string }
   | { kind: 'result'; successPath: string; successValue: boolean; requiredPath?: string }
-  | { kind: 'evidence'; claimField: string; evidenceField: string; forbiddenSource?: string };
+  | { kind: 'evidence'; claimField: string; evidenceField: string; forbiddenSource?: string }
+  /** Static local environment contract check; never reads secret values. */
+  | { kind: 'envContract'; contract: string; configFiles?: string[]; root?: string };
 
 /** Bare strategy names usable as config shorthand (param-less ones only). */
 export type VerifyStrategyName = VerifyStrategy['kind'];

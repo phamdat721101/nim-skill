@@ -8,8 +8,8 @@
  */
 import { Command } from 'commander';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { VERSION } from './index.js';
 import { loadNimJson, mergeHarness, resolveConfig, loadBaselineJson, resolveBaselineConfig, loadWorkspaceJson, resolveWorkspaceConfig, loadWorkruleJson, resolveWorkruleConfig } from './config.js';
 import { runHarnessed, HarnessExecutionError } from './harness/runtime.js';
@@ -34,11 +34,34 @@ import { readMcpConfig, readSkillsDir } from './index-meter/adapters.js';
 import { detectTier } from './profile/index.js';
 import { tightenFor } from './profile/tiers.js';
 import { appendHandoff, createFeatureBrief, initializeWorkspace } from './workspace/bootstrap.js';
+import { deliveryBriefTemplate, runDeliveryCheck } from './deliver/index.js';
+import { createMemoryHelper, verifyKey } from './memory/index.js';
+import { createLogCompactHelper } from './logcompact/index.js';
 import type { HarnessConfig, SkillDef } from './harness/types.js';
 
 function runShell(cmd: string): { code: number; stdout: string; stderr: string } {
   const r = spawnSync(cmd, { shell: true, encoding: 'utf8' });
   return { code: r.status ?? 1, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
+}
+
+function readFileSnapshot(path: string): string | null {
+  return existsSync(path) ? readFileSync(path, 'utf8') : null;
+}
+
+function deliveryCacheSnapshot(root: string, briefDir: string, contract: string | undefined, configFiles: string[] | undefined, evidenceFile: string | undefined, workruleEntries: unknown, briefFile?: string): unknown {
+  const briefPath = join(root, briefDir);
+  const briefs = briefFile
+    ? [{ name: briefFile, content: readFileSnapshot(join(root, briefFile)) }]
+    : existsSync(briefPath)
+    ? readdirSync(briefPath).filter((name) => name.endsWith('.md')).sort().map((name) => ({ name, content: readFileSnapshot(join(briefPath, name)) }))
+    : [];
+  return {
+    briefs,
+    contract: contract ? readFileSnapshot(join(root, contract)) : null,
+    configFiles: (configFiles ?? []).map((file) => ({ file, content: readFileSnapshot(join(root, file)) })),
+    evidence: readFileSnapshot(join(root, evidenceFile ?? '.nim/deliver/default-evidence.json')),
+    workruleEntries,
+  };
 }
 
 const program = new Command();
@@ -108,6 +131,107 @@ program
       else process.stderr.write(`nim: ${(err as Error).message}\n`);
       process.exitCode = 1;
     }
+});
+
+// ─── nim-skill deliver ─────────────────────────────────────────────────────
+
+const deliverCmd = program.command('deliver').description('Product-owner delivery contract: rationale, environment readiness, verification, and post-delivery evidence.');
+
+deliverCmd
+  .command('propose')
+  .argument('<task>', 'client-facing feature or project outcome')
+  .option('--dir <dir>', 'project directory', '.')
+  .description('Create a delivery-ready feature brief and a human-approval proposal without overwriting either artifact.')
+  .action((task: string, opts: { dir: string }) => {
+    const root = resolve(opts.dir);
+    const brief = createFeatureBrief(root, task);
+    const briefFile = join(root, brief.path);
+    if (brief.created) writeFileSync(briefFile, deliveryBriefTemplate(task));
+    const proposalsDir = join(root, '.nim/proposals');
+    const id = proposalHashFor(task);
+    const proposal = proposalPathFor(task, proposalsDir);
+    if (!existsSync(proposal)) {
+      mkdirSync(proposalsDir, { recursive: true });
+      writeFileSync(proposal, `# Proposal: ${task}\n\n## Plan\n\nDelivery brief: \`${brief.path}\`\n\n## Rollback\n\nSee the approved delivery brief.\n\nproposed: ${new Date().toISOString()}\n`);
+    }
+    process.stdout.write(`nim: ${brief.created ? 'created' : 'kept'} ${brief.path}\n`);
+    process.stdout.write(`nim: proposal ${proposal} (id ${id}); review then run \`nim-skill propose --approve ${id}\`\n`);
+  });
+
+deliverCmd
+  .command('check')
+  .option('--profile <name>', 'configured delivery profile', 'default')
+  .option('--phase <phase>', 'pre | post', 'pre')
+  .option('--brief <path>', 'specific feature brief to validate; defaults to the newest brief in workspace.deliver.briefDir')
+  .option('--dir <dir>', 'project directory', '.')
+  .option('--json', 'emit the complete report as JSON')
+  .description('Strictly verify an approved product brief, environment contract, tests, workrule evidence, and optionally post-delivery proof.')
+  .action(async (opts: { profile: string; phase: string; brief?: string; dir: string; json?: boolean }) => {
+    if (opts.phase !== 'pre' && opts.phase !== 'post') {
+      process.stderr.write('nim: --phase must be pre or post\n');
+      process.exitCode = 1;
+      return;
+    }
+    const root = resolve(opts.dir);
+    const workspace = resolveWorkspaceConfig(loadWorkspaceJson(root));
+    const config = workspace.deliver;
+    if (!config) {
+      process.stderr.write('nim: workspace.deliver is not configured\n');
+      process.exitCode = 1;
+      return;
+    }
+    const harness = resolveConfig(loadNimJson(root));
+    const compact = createLogCompactHelper(harness.logCompact ?? { strategy: 'errors-only', maxLines: 100, escalateOnEmpty: true });
+    const workrule = createWorkruleHelper(resolveWorkruleConfig(loadWorkruleJson(root)));
+    const profile = config.profiles[opts.profile];
+    const memory = createMemoryHelper(harness.memory);
+    const workruleEntries = workrule.history().filter((entry) => entry.primitive === 'nim-deliver');
+    const cacheInput = {
+      config,
+      profile: opts.profile,
+      phase: opts.phase,
+      snapshot: deliveryCacheSnapshot(root, config.briefDir, profile?.contract, profile?.configFiles, profile?.evidenceFile ?? `.nim/deliver/${opts.profile}-evidence.json`, workruleEntries, opts.brief),
+    };
+    const cacheKey = verifyKey(cacheInput, ['deliver-check']);
+    const cached = memory.getVerify(cacheKey);
+    const report = cached === true
+      ? { profile: opts.profile, phase: opts.phase as 'pre' | 'post', checkedAt: new Date().toISOString(), passed: true, checks: [{ strategy: 'DELIVER memory verification cache', pass: true }] }
+      : runDeliveryCheck(root, config, opts.profile, opts.phase as 'pre' | 'post', (command) => {
+        const output = runShell(command);
+        const detail = compact.compact(`${output.stdout}\n${output.stderr}`).text.trim();
+        return { ok: output.code === 0, detail: detail || `exit ${output.code}` };
+      }, workruleEntries.length > 0, opts.brief);
+    if (cached !== true) memory.setVerify(cacheKey, report.passed);
+    const enforced = await verifyOrHeal({ passed: report.passed }, { strategies: [{ kind: 'result', successPath: 'passed', successValue: true }], maxHeals: 0, mode: config.mode });
+    if (opts.json) process.stdout.write(JSON.stringify({ ...report, cached }, null, 2) + '\n');
+    else for (const item of report.checks) process.stdout.write(`[${item.pass ? 'PASS' : 'FAIL'}] ${item.strategy}${item.reason ? ` — ${item.reason}` : ''}\n`);
+    if (!enforced.verified || !report.passed) process.exitCode = 1;
+  });
+
+deliverCmd
+  .command('record')
+  .requiredOption('--profile <name>', 'configured delivery profile')
+  .requiredOption('--evidence <file>', 'JSON evidence file with source, buildId, target, timestamp, health, and clientAcceptance')
+  .option('--dir <dir>', 'project directory', '.')
+  .description('Store independently sourced post-delivery evidence locally for a later `deliver check --phase post`.')
+  .action((opts: { profile: string; evidence: string; dir: string }) => {
+    const root = resolve(opts.dir);
+    const workspace = resolveWorkspaceConfig(loadWorkspaceJson(root));
+    const profile = workspace.deliver?.profiles[opts.profile];
+    if (!profile || !existsSync(opts.evidence)) {
+      process.stderr.write(profile ? `nim: evidence file not found: ${opts.evidence}\n` : `nim: profile not configured: ${opts.profile}\n`);
+      process.exitCode = 1;
+      return;
+    }
+    try { JSON.parse(readFileSync(opts.evidence, 'utf8')); } catch {
+      process.stderr.write(`nim: evidence is not valid JSON: ${opts.evidence}\n`);
+      process.exitCode = 1;
+      return;
+    }
+    const target = join(root, profile.evidenceFile ?? `.nim/deliver/${opts.profile}-evidence.json`);
+    mkdirSync(resolve(target, '..'), { recursive: true });
+    writeFileSync(target, readFileSync(opts.evidence, 'utf8'));
+    process.stdout.write(`nim: recorded post-delivery evidence → ${target}\n`);
   });
 
 program

@@ -30,6 +30,7 @@ import type {
   VerifyStrategy,
   EnforceMode,
 } from './harness/types.js';
+import type { DeliveryConfig } from './deliver/index.js';
 
 // ─── Zod schemas ─────────────────────────────────────────────────────────
 
@@ -48,6 +49,7 @@ const verifyStrategySchema: z.ZodType<VerifyStrategy> = z.union([
   z.object({ kind: z.literal('command'), command: z.string() }),
   z.object({ kind: z.literal('result'), successPath: z.string().min(1), successValue: z.boolean(), requiredPath: z.string().min(1).optional() }),
   z.object({ kind: z.literal('evidence'), claimField: z.string().min(1), evidenceField: z.string().min(1), forbiddenSource: z.string().min(1).optional() }),
+  z.object({ kind: z.literal('envContract'), contract: z.string().min(1), configFiles: z.array(z.string().min(1)).optional(), root: z.string().min(1).optional() }),
 ]);
 
 const strategyName = z.enum(['nonempty', 'json', 'schema', 'math', 'test', 'lint', 'command', 'result']);
@@ -236,6 +238,12 @@ export const workspaceSchema = z.object({
   livenessFile: z.string().optional(),
   livenessCadence: z.string().optional(),
   mode: z.enum(['warn', 'strict', 'off']).optional(),
+  deliver: z.object({
+    mode: z.enum(['warn', 'strict', 'off']).optional(),
+    briefDir: z.string().optional(),
+    requireWorkrule: z.boolean().optional(),
+    profiles: z.record(z.object({ contract: z.string(), configFiles: z.array(z.string()).optional(), commands: z.array(z.string()).optional(), evidenceFile: z.string().optional() })).optional(),
+  }).optional(),
 });
 
 /**
@@ -291,6 +299,7 @@ export interface ResolvedWorkspaceConfig {
   livenessFile: string;
   livenessCadence: string[];
   mode: 'warn' | 'strict' | 'off';
+  deliver: DeliveryConfig | null;
 }
 
 /**
@@ -314,6 +323,12 @@ export function resolveWorkspaceConfig(input: unknown = {}): ResolvedWorkspaceCo
     livenessFile: parsed.livenessFile ?? '',
     livenessCadence: parsed.livenessCadence ? parsed.livenessCadence.split(',').map((s) => s.trim()) : [],
     mode: parsed.mode ?? 'warn',
+    deliver: parsed.deliver ? {
+      mode: parsed.deliver.mode ?? 'strict',
+      briefDir: parsed.deliver.briefDir ?? 'docs/features',
+      requireWorkrule: parsed.deliver.requireWorkrule ?? true,
+      profiles: parsed.deliver.profiles ?? {},
+    } satisfies DeliveryConfig : null,
   };
 }
 

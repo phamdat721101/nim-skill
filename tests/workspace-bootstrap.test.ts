@@ -71,5 +71,7 @@ describe('agent-ready workspace bootstrap', () => {
     expect(harness.context).toMatchObject({ onExceed: 'compact' });
     expect(harness.logCompact).toMatchObject({ strategy: 'errors-only' });
     expect(workspace.livenessFile).toBe('docs/state/active_session.md');
+    expect(workspace.deliver?.mode).toBe('strict');
+    expect(existsSync(join(TMP, '.nim/deliver/default-contract.json'))).toBe(true);
   });
 });

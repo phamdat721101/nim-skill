@@ -48,6 +48,7 @@ side_effects:
   - "Writes owner-profile JSONL to .nim/owner-profile.jsonl when a proposal is approved"
   - "Reads/writes grill session JSONL under .nim/grill/ when `nim-skill grill` commands run"
   - "Writes compiled PRD markdown to .nim/grill/<session-id>-prd.md when `nim-skill grill compile` runs"
+  - "Reads/writes local delivery contracts and post-delivery evidence under .nim/deliver/ when `nim-skill deliver` runs"
   - "Runs verify commands (test/lint/command strategies) via the shell"
   - "Optional: forwards error traces to Sentry when SENTRY_DSN is set (no-op otherwise)"
 identity:
@@ -68,6 +69,7 @@ sub_skills:
   - skills/nim-logcompact
   - skills/nim-propose
   - skills/nim-grill
+  - skills/nim-deliver
 ---
 
 

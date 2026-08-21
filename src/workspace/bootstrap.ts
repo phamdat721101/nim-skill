@@ -112,7 +112,17 @@ function defaultNimJson(assessment: WorkspaceAssessment): string {
       context: { progressive: true, maxInputTokens: 8000, onExceed: 'compact' },
       logCompact: { strategy: 'errors-only', maxLines: 100, escalateOnEmpty: true },
     },
-    workspace: { stack: assessment.stack, livenessFile: 'docs/state/active_session.md', mode: 'warn' },
+    workspace: {
+      stack: assessment.stack,
+      livenessFile: 'docs/state/active_session.md',
+      mode: 'warn',
+      deliver: {
+        mode: 'strict',
+        briefDir: 'docs/features',
+        requireWorkrule: true,
+        profiles: { default: { contract: '.nim/deliver/default-contract.json', configFiles: [], commands: [] } },
+      },
+    },
     workrule: { logFile: '.nim/agent-support-log.md' },
   }, null, 2)}\n`;
 }
@@ -135,7 +145,7 @@ export function initializeWorkspace(root: string, dryRun = false): SetupReport {
   if (!existsSync(resolved)) throw new Error(`nim: workspace directory does not exist: ${root}`);
   const assessment = assessWorkspace(resolved);
   const report: SetupReport = { kind: assessment.kind, created: [], skipped: [], assessment, reviewRequired: assessment.reviewRequired };
-  for (const dir of ['docs/features', 'docs/state']) {
+  for (const dir of ['docs/features', 'docs/state', '.nim/deliver']) {
     const path = projectPath(resolved, dir);
     if (existsSync(path)) report.skipped.push(`${dir}/`);
     else {
@@ -143,6 +153,11 @@ export function initializeWorkspace(root: string, dryRun = false): SetupReport {
       if (!dryRun) mkdirSync(path, { recursive: true });
     }
   }
+  createMissing(resolved, '.nim/deliver/default-contract.json', `${JSON.stringify({
+    secrets: [],
+    tls: [],
+    collateral: [],
+  }, null, 2)}\n`, dryRun, report);
   createMissing(resolved, 'CONSTITUTION.md', constitution(assessment), dryRun, report);
   createMissing(resolved, 'docs/state/active_session.md', initialSession(), dryRun, report);
   createMissing(resolved, 'nim.json', defaultNimJson(assessment), dryRun, report);

@@ -6,9 +6,9 @@ import { resolveWorkruleConfig } from '../src/config.js';
 const TEST_LOG = '.nim/workrule-test-log.md';
 
 describe('WORKRULE_QUESTIONS', () => {
-  it('has exactly 6 questions, WR-01 through WR-06', () => {
-    expect(WORKRULE_QUESTIONS).toHaveLength(6);
-    expect(WORKRULE_QUESTIONS.map((q) => q.id)).toEqual(['WR-01', 'WR-02', 'WR-03', 'WR-04', 'WR-05', 'WR-06']);
+  it('has exactly 7 questions, WR-01 through WR-07', () => {
+    expect(WORKRULE_QUESTIONS).toHaveLength(7);
+    expect(WORKRULE_QUESTIONS.map((q) => q.id)).toEqual(['WR-01', 'WR-02', 'WR-03', 'WR-04', 'WR-05', 'WR-06', 'WR-07']);
   });
 });
 
