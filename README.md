@@ -92,8 +92,11 @@ if (!res.ok && res.error.actionRequired) {
 
 Pair it with `nim-workspace`'s opt-in `strictPlanMode` (one `[Active]` goal
 at a time, no silent backtracking on a `[Closed]` one) to stop an agent from
-quietly abandoning the current goal instead of trying the suggested fix. Full
-write-up, built-in rule table, and a copy-paste system-prompt line:
+quietly abandoning the current goal instead of trying the suggested fix.
+
+Don't want to touch code at all? The same rules also work as a **pure
+system prompt** — a fixed error-log format, a remediation table, and a
+loop-breaking rule, no install required:
 [`docs/share-nim-remediation-loop.md`](./docs/share-nim-remediation-loop.md).
 
 ## Configure the harness
