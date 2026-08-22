@@ -90,3 +90,51 @@ export function checkStaleness(
     reason: `liveness file was last refreshed on ${calendarDayKey(livenessFileMtimeMs)}, but today (${today}) is a declared cadence day — re-run the workspace sync step before proceeding`,
   };
 }
+
+/**
+ * WS-MUTEX — v0.13 nim-workspace strict plan mode. Does the current
+ * `active_session.md` content have more `[Active]`-tagged entries than
+ * `maxConcurrentActive`, net of any that have since been closed/blocked?
+ * Only ever invoked by the caller when `strictPlanMode.enabled` is true — a
+ * session file with no `[Active]` tag vocabulary in use always passes
+ * (nothing to enforce a mutex over), matching the rollback contract: this
+ * check is structurally a no-op until a project opts in AND starts tagging
+ * handoffs.
+ */
+export function checkPlanMutex(sessionText: string, maxConcurrentActive: number): CheckResult {
+  const activeCount = (sessionText.match(/\[Active\]/g) ?? []).length
+    - (sessionText.match(/\[Closed\]|\[Blocked\]/g) ?? []).length;
+  if (activeCount <= maxConcurrentActive) return { strategy: 'WS-MUTEX', pass: true };
+  return {
+    strategy: 'WS-MUTEX',
+    pass: false,
+    reason: `${activeCount} concurrently [Active] goals exceed the configured maximum of ${maxConcurrentActive} — close or block the prior goal before starting a new one.`,
+  };
+}
+
+/**
+ * WS-NO-BACKTRACK — v0.13 nim-workspace strict plan mode. Does a proposed
+ * handoff attempt to reopen (`[Active]`) a goal whose most recent tagged
+ * entry was `[Closed]`, without an explicit `[Override: <reason>]` line
+ * present in the proposed content? `requireOverrideOnReopen` gates whether
+ * this ever blocks — `false` always passes regardless of content, matching
+ * the rollback contract for a project that has not opted in.
+ */
+export function checkNoBacktrack(
+  proposedGoalId: string,
+  sessionText: string,
+  proposedContent: string,
+  requireOverrideOnReopen: boolean,
+): CheckResult {
+  if (!requireOverrideOnReopen) return { strategy: 'WS-NO-BACKTRACK', pass: true };
+  const wasClosed = new RegExp(`${escapeRegExp(proposedGoalId)}[^\\n]*\\[Closed\\]`).test(sessionText);
+  if (!wasClosed) return { strategy: 'WS-NO-BACKTRACK', pass: true };
+  const hasOverride = /\[Override:\s*[^\]]+\]/.test(proposedContent);
+  return {
+    strategy: 'WS-NO-BACKTRACK',
+    pass: hasOverride,
+    reason: hasOverride
+      ? undefined
+      : `Goal '${proposedGoalId}' was already [Closed]. Reopening it requires an explicit "[Override: <reason>]" line — this is a deliberate human-in-the-loop friction point, not an accident.`,
+  };
+}

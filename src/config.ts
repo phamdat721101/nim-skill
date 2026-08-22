@@ -244,6 +244,17 @@ export const workspaceSchema = z.object({
     requireWorkrule: z.boolean().optional(),
     profiles: z.record(z.object({ contract: z.string(), configFiles: z.array(z.string()).optional(), commands: z.array(z.string()).optional(), evidenceFile: z.string().optional() })).optional(),
   }).optional(),
+  /**
+   * v0.13 nim-workspace strict plan mode — opt-in mutex + no-backtrack
+   * enforcement on `docs/state/active_session.md`. Absent entirely, or
+   * `enabled: false` (the default), ⇒ `checkPlanMutex`/`checkNoBacktrack`
+   * are never invoked (rollback contract, same precedent as `deliver`).
+   */
+  strictPlanMode: z.object({
+    enabled: z.boolean().optional(),
+    maxConcurrentActive: z.number().int().positive().optional(),
+    requireOverrideOnReopen: z.boolean().optional(),
+  }).optional(),
 });
 
 /**
@@ -300,6 +311,8 @@ export interface ResolvedWorkspaceConfig {
   livenessCadence: string[];
   mode: 'warn' | 'strict' | 'off';
   deliver: DeliveryConfig | null;
+  /** v0.13 — null when `strictPlanMode.enabled` is absent/false (rollback contract: never invoked). */
+  strictPlanMode: { maxConcurrentActive: number; requireOverrideOnReopen: boolean } | null;
 }
 
 /**
@@ -329,6 +342,10 @@ export function resolveWorkspaceConfig(input: unknown = {}): ResolvedWorkspaceCo
       requireWorkrule: parsed.deliver.requireWorkrule ?? true,
       profiles: parsed.deliver.profiles ?? {},
     } satisfies DeliveryConfig : null,
+    strictPlanMode: parsed.strictPlanMode?.enabled ? {
+      maxConcurrentActive: parsed.strictPlanMode.maxConcurrentActive ?? 1,
+      requireOverrideOnReopen: parsed.strictPlanMode.requireOverrideOnReopen ?? true,
+    } : null,
   };
 }
 

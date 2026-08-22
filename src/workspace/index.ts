@@ -7,10 +7,11 @@
  * (hook adapters wrap `check()`'s result, never re-derive it).
  */
 
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { CheckResult } from '../harness/types.js';
 import type { ResolvedWorkspaceConfig } from '../config.js';
-import { checkLocationMatch, checkStaleness, deriveOffStackByPath } from './rules.js';
+import { checkLocationMatch, checkStaleness, checkPlanMutex, checkNoBacktrack, deriveOffStackByPath } from './rules.js';
 import { scanOffStackSignal } from './signal-scan.js';
 import { scanExistenceOverlap, readWorkspaceArtifacts, type ExistingArtifact } from './existence-scan.js';
 
@@ -55,6 +56,27 @@ function buildStaleWarning(cfg: ResolvedWorkspaceConfig): string | undefined {
 }
 
 /**
+ * v0.13 strict plan mode — WS-MUTEX + WS-NO-BACKTRACK evidence, computed only
+ * when `cfg.strictPlanMode` is non-null (the caller already gates on
+ * `.enabled`). A missing `docs/state/active_session.md` degrades to "no
+ * signal" (empty session text) rather than throwing — same never-loosen /
+ * never-crash-on-absence precedent as `buildStaleWarning()` above. The
+ * proposal's `declaredPurpose` (falling back to a content slice, same
+ * derivation `scanExistenceOverlap` already uses) stands in for the goal id,
+ * since `WorkspaceProposal` has no dedicated goal-id field.
+ */
+function buildStrictPlanEvidence(cfg: ResolvedWorkspaceConfig, proposal: WorkspaceProposal): CheckResult[] {
+  if (!cfg.strictPlanMode) return [];
+  const sessionPath = resolve('docs/state/active_session.md');
+  const sessionText = existsSync(sessionPath) ? readFileSync(sessionPath, 'utf8') : '';
+  const goalId = proposal.declaredPurpose ?? proposal.content.slice(0, 200);
+  return [
+    checkPlanMutex(sessionText, cfg.strictPlanMode.maxConcurrentActive),
+    checkNoBacktrack(goalId, sessionText, proposal.content, cfg.strictPlanMode.requireOverrideOnReopen),
+  ];
+}
+
+/**
  * Never-loosen-on-absence for a stale liveness file that doesn't exist yet:
  * evaluated separately from the missing-file early-return above so a
  * declared-but-not-yet-created liveness file degrades to "no signal" rather
@@ -91,6 +113,16 @@ export function createWorkspaceGuard(cfg: ResolvedWorkspaceConfig): WorkspaceGua
           ? `this content clusters signal for '${signalMatch.matchedStack}'; declared workspace stack is ${cfg.stack.join('+')}; refusing write to ${proposal.filePath}. If this is intentional cross-project reference material, add an explicit override comment or move it to the correct sibling workspace.`
           : locationResult.reason ?? 'subject-matter-to-location mismatch';
         return { recommendation: 'BLOCK', reason, evidence, staleWarning };
+      }
+
+      // 2b. v0.13 strict plan mode — WS-MUTEX + WS-NO-BACKTRACK, only when
+      //     cfg.strictPlanMode is enabled (null otherwise ⇒ zero evidence,
+      //     byte-identical to pre-v0.13 behavior).
+      const strictPlanEvidence = buildStrictPlanEvidence(cfg, proposal);
+      evidence.push(...strictPlanEvidence);
+      const failingStrictPlanCheck = strictPlanEvidence.find((c) => !c.pass);
+      if (failingStrictPlanCheck) {
+        return { recommendation: 'BLOCK', reason: failingStrictPlanCheck.reason ?? 'strict plan mode check failed', evidence, staleWarning };
       }
 
       // 3. Existence — overlap against discovered workspace artifacts.

@@ -9,7 +9,9 @@
     "message": { "type": "string" },
     "cause": {},
     "retryable": { "type": "boolean" },
-    "attempts": { "type": "integer", "minimum": 0 }
+    "attempts": { "type": "integer", "minimum": 0 },
+    "errorType": { "type": "string" },
+    "actionRequired": { "type": "string" }
   },
   "additionalProperties": false
 }

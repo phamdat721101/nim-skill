@@ -67,8 +67,18 @@ Config (`nim.json` → top-level `workspace`, a sibling of `harness`/`baseline`/
     "clusterWindow": 8, "clusterThreshold": 3,
     "existenceOverlapThresholds": { "extend": 50, "compose": 80, "iterate": 20 },
     "livenessFile": "_brain/product-state.md", "livenessCadence": "Mon,Wed,Fri",
-    "mode": "warn" } }
+    "mode": "warn",
+    "strictPlanMode": { "enabled": true, "maxConcurrentActive": 1, "requireOverrideOnReopen": true } } }
 ```
+
+`strictPlanMode` (v0.13, opt-in, default `enabled: false`) enforces two rules against
+`docs/state/active_session.md`: **WS-MUTEX** — no more than `maxConcurrentActive`
+handoffs may be tagged `[Active]` at once; **WS-NO-BACKTRACK** — a goal already tagged
+`[Closed]` cannot be reopened (`[Active]` again) unless the proposed content includes an
+explicit `[Override: <reason>]` line. Both checks are `CheckResult` entries appended to
+the same evidence array `WS-LOCATION` already populates, and a failing check can produce
+a `BLOCK` recommendation exactly like `WS-LOCATION` does. Absent or `enabled: false` ⇒
+neither check ever runs (byte-identical to pre-v0.13 behavior).
 
 ```ts
 import { createWorkspaceGuard } from 'nim-skill';

@@ -75,6 +75,27 @@ Append workspace handoff --> next agent resumes from the final snapshot
 6. Record the handoff with goal, output, blocker, attempts, and next step.
 7. Run `nim-skill workrule check` before and after multi-file edits.
 
+### Break error-retry loops with a remediation prompt
+
+An agent stuck retrying the same failed tool call usually knows *that* it
+failed, not *what to do differently*. `nim-error-handler`'s classified errors
+can carry a derived `actionRequired` instruction — feed it straight into the
+agent's next turn instead of repeating the same call unchanged:
+
+```ts
+const res = await recover(() => doWork(), policy);
+if (!res.ok && res.error.actionRequired) {
+  // 👉 hand this to your next prompt/turn instead of retrying blindly
+  console.log(`Next step: ${res.error.actionRequired}`);
+}
+```
+
+Pair it with `nim-workspace`'s opt-in `strictPlanMode` (one `[Active]` goal
+at a time, no silent backtracking on a `[Closed]` one) to stop an agent from
+quietly abandoning the current goal instead of trying the suggested fix. Full
+write-up, built-in rule table, and a copy-paste system-prompt line:
+[`docs/share-nim-remediation-loop.md`](./docs/share-nim-remediation-loop.md).
+
 ## Configure the harness
 
 Every layer is opt-in. Omit a block or set it to `false` for a byte-identical no-op.

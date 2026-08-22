@@ -32,6 +32,9 @@ export interface HandoffInput {
   next: string;
   blocker?: string;
   attempted?: string[];
+  /** v0.13 — when true, the rendered heading is `## Session <ISO> [Blocked]` instead of
+   *  the bare heading. Presentational only; does not alter circuit-breaker behavior. */
+  breakerOpen?: boolean;
 }
 
 function projectPath(root: string, path: string): string {
@@ -188,7 +191,7 @@ export function appendHandoff(root: string, input: HandoffInput, dryRun = false)
   const path = projectPath(root, 'docs/state/active_session.md');
   const attempted = input.attempted?.filter((item) => item.trim()).map((item) => `- ${item.trim()}`).join('\n') || '- None recorded.';
   const latest = input.blocker?.trim() ? `${output}\n\nBlocker: ${input.blocker.trim()}` : output;
-  const entry = `\n## Session ${new Date().toISOString()}\n\n### Current goal\n\n${goal}\n\n### Latest output or blocker\n\n${latest}\n\n### Attempted solutions\n\n${attempted}\n\n### Next steps\n\n${next}\n`;
+  const entry = `\n## Session ${new Date().toISOString()}${input.breakerOpen ? ' [Blocked]' : ''}\n\n### Current goal\n\n${goal}\n\n### Latest output or blocker\n\n${latest}\n\n### Attempted solutions\n\n${attempted}\n\n### Next steps\n\n${next}\n`;
   if (!dryRun) {
     mkdirSync(resolve(path, '..'), { recursive: true });
     if (!existsSync(path)) writeFileSync(path, '# Active session\n\nRead the final `## Session` entry as the current handoff state. This file is append-only.\n');

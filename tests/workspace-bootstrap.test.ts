@@ -60,6 +60,15 @@ describe('agent-ready workspace bootstrap', () => {
     expect(() => appendHandoff(TMP, { goal: ' ', output: 'x', next: 'x' })).toThrow(/--goal/);
   });
 
+  it('renders a [Blocked] heading suffix only when breakerOpen is explicitly true (v0.13)', () => {
+    mkdirSync(TMP, { recursive: true });
+    appendHandoff(TMP, { goal: 'normal', output: 'ok', next: 'continue' });
+    appendHandoff(TMP, { goal: 'tripped', output: 'circuit breaker opened', next: 'human review', breakerOpen: true });
+    const state = readFileSync(join(TMP, 'docs/state/active_session.md'), 'utf8');
+    expect(state).toMatch(/^## Session \d{4}-\d{2}-\d{2}T[\d:.]+Z\s*$/m); // bare heading still present, unmodified
+    expect(state).toMatch(/^## Session \d{4}-\d{2}-\d{2}T[\d:.]+Z \[Blocked\]\s*$/m); // new tagged heading
+  });
+
   it('generates config that enables the requested harness layers', () => {
     mkdirSync(TMP, { recursive: true });
     initializeWorkspace(TMP);

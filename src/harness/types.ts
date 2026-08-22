@@ -54,6 +54,15 @@ export interface ClassifiedError {
   cause?: unknown;
   retryable: boolean;
   attempts: number;
+  /** v0.13 nim-error-handler — human-readable failure category (e.g. 'file-not-found',
+   *  'compilation-failed', 'tool-syntax-error'). Derived, advisory — never a substitute
+   *  for `class` in branching logic. Populated only when a remediation-table entry
+   *  matches; undefined otherwise (byte-identical to pre-v0.13 shape). */
+  errorType?: string;
+  /** v0.13 nim-error-handler — imperative next-action directive for the calling agent.
+   *  Derived, advisory — never a substitute for `class` in branching logic. Populated
+   *  only alongside `errorType`, from the same remediation-table lookup. */
+  actionRequired?: string;
 }
 
 /** Discriminated result — never throw unclassified. */
@@ -204,6 +213,12 @@ export interface ErrorHandlerConfig {
   circuitBreaker?: CircuitBreakerConfig | false;
   /** JSON-safe regex source strings describing errors this skill expects. */
   expectedErrorPatterns?: string[];
+  /**
+   * v0.13 — user-supplied remediation rules, checked BEFORE the built-in
+   * DEFAULT_REMEDIATION_TABLE so a project can override without forking
+   * `error-handler/remediation.ts`. Absent ⇒ only the built-in defaults apply.
+   */
+  remediationRules?: import('../error-handler/remediation.js').RemediationRule[];
 }
 
 export interface EnforcerConfig {

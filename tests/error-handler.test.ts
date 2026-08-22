@@ -61,6 +61,24 @@ describe('run', () => {
     expect(fn).toHaveBeenCalledTimes(1);
     expect(r.ok).toBe(false);
   });
+  it('propagates errorType/actionRequired onto Result.error when the message matches a default remediation rule', async () => {
+    const r = await run(() => { throw new Error('ENOENT: no such file or directory'); }, policy({ retries: 0 }), { sleep: noSleep });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.class).toBe('permanent');
+      expect(r.error.errorType).toBe('file-not-found');
+      expect(r.error.actionRequired).toBe('Stop guessing the path. List the parent directory to verify the exact name before retrying.');
+    }
+  });
+  it('honors caller-supplied remediationRules over the default table', async () => {
+    const customRule = { pattern: /no such file/i, errorType: 'custom-missing', actionRequired: 'custom action' };
+    const r = await run(() => { throw new Error('no such file'); }, policy({ retries: 0 }), { sleep: noSleep, remediationRules: [customRule] });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.errorType).toBe('custom-missing');
+      expect(r.error.actionRequired).toBe('custom action');
+    }
+  });
   it('diagnoses an ambiguous error once before recovery', async () => {
     const diagnose = vi.fn(() => Object.assign(new Error('connection ETIMEDOUT'), { class: 'transient' as const }));
     let calls = 0;
