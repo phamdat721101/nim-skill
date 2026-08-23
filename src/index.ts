@@ -4,7 +4,7 @@
  * Each primitive is also exported standalone.
  */
 
-export const VERSION = '0.10.0';
+export const VERSION = '0.14.0';
 
 // Core
 export { runHarnessed, HarnessExecutionError } from './harness/runtime.js';
@@ -21,6 +21,8 @@ export {
   resolveWorkspaceConfig,
   loadWorkruleJson,
   resolveWorkruleConfig,
+  loadGlobalMemJson,
+  resolveGlobalMemConfig,
   type ResolvedHarnessConfig,
   type ResolvedGuard,
   type ResolvedErrorHandler,
@@ -31,6 +33,9 @@ export {
   type ResolvedExecution,
   type ResolvedCache,
   type ResolvedGrillConfig,
+  type ResolvedCompactConfig,
+  type ResolvedSearchConfig,
+  type ResolvedGlobalMemConfig,
 } from './config.js';
 
 // Guard
@@ -62,6 +67,12 @@ export { verifyOrHeal, defaultCommandRunner, type CommandRunner, type EnforceCon
 export { estimateTokens, estimateTokensOf } from './tokens.js';
 export { createContextHelper, ContextBudgetError } from './context/index.js';
 export { createMemoryHelper, verifyKey } from './memory/index.js';
+export { createSearchHelper, chunkMarkdown, scoreBm25 } from './search/index.js';
+export type { MemoryChunk, SearchConfig, SearchHelper, SearchOpts, SearchResultEntry, SearchTrace } from './search/index.js';
+export { createCompactor, validateCompactionOutput } from './compact/index.js';
+export type { CompactConfig, CompactHelper, CompactionInput, CompactionOutput, CompactionResult } from './compact/index.js';
+export { createGlobalMemoryAuditor } from './globalmem/index.js';
+export type { DriftReport, GlobalMemoryDeclaration } from './globalmem/index.js';
 export { toTerminal, assertTerminal, SerializeGuardError, type TerminalFormat } from './serialize/index.js';
 export { createCacheHelper, computeRoi, pickAdapter, parseUsage, type ParsedUsage, type CacheHelperHandle } from './cache/index.js';
 export { createWorkspaceGuard, type WorkspaceGuard, type WorkspaceCheckResult, type WorkspaceProposal, type WorkspaceRecommendation } from './workspace/index.js';

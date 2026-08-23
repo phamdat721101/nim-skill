@@ -49,9 +49,14 @@ import { createLessonsHelper } from '../lessons/index.js';
 import { createLessonsStore } from '../lessons/store.js';
 import { findCostedActionMatch } from '../lessons/cost-gate.js';
 import { createLogCompactHelper } from '../logcompact/index.js';
+import { createCompactor } from '../compact/index.js';
+import { createSearchHelper } from '../search/index.js';
+import type { SearchTrace } from '../search/types.js';
 import { createGrillHelper } from '../grill/index.js';
 import { createBudgetHelper, WeeklyTokenLedger } from '../guard/budget.js';
 import { estimateTokensOf } from '../tokens.js';
+import { readFileSync } from 'node:fs';
+import { chunkMarkdown } from '../search/chunk.js';
 
 type Dict = Record<string, unknown>;
 
@@ -172,9 +177,10 @@ function buildRunCtx(
   getBudgetSpentUsd: () => number | undefined;
   getWeeklyBudget: () => { capTokens: number; spentTokens: number } | undefined;
   getLogCompact: () => LogCompactResult | undefined;
+  getSearch: () => SearchTrace | undefined;
 } {
   const hasBudget = !!cfg.guard && (!!cfg.guard.taskBudget || cfg.guard.weeklyTokenBudget !== null);
-  const enabled = cfg.cache || cfg.context || cfg.memory || cfg.execution?.isolate || cfg.lessons || cfg.logCompact || cfg.grill || hasBudget;
+  const enabled = cfg.cache || cfg.context || cfg.memory || cfg.execution?.isolate || cfg.lessons || cfg.logCompact || cfg.compact || cfg.search || cfg.grill || hasBudget;
   if (!enabled) {
     return {
       runCtx: ctx,
@@ -183,6 +189,7 @@ function buildRunCtx(
       getBudgetSpentUsd: () => undefined,
       getWeeklyBudget: () => undefined,
       getLogCompact: () => undefined,
+      getSearch: () => undefined,
     };
   }
 
@@ -250,6 +257,26 @@ function buildRunCtx(
     };
   }
 
+  if (cfg.compact) runCtx.compact = createCompactor(cfg.compact);
+
+  let searchTrace: SearchTrace | undefined;
+  if (cfg.search) {
+    const helper = createSearchHelper(cfg.search);
+    runCtx.search = {
+      search(query, chunks, opts) {
+        const result = helper.search(query, chunks, opts);
+        searchTrace = { query, chunkCount: chunks.length, returnedCount: result.length };
+        return result;
+      },
+      searchFiles(query, paths, opts) {
+        const chunks = paths.flatMap((path) => chunkMarkdown(path, readFileSync(path, 'utf8')));
+        const result = helper.search(query, chunks, opts);
+        searchTrace = { query, chunkCount: chunks.length, returnedCount: result.length };
+        return result;
+      },
+    };
+  }
+
   // v1.0 nim-grill — inject ctx.grill when harness.grill is configured.
   // Byte-identical-off when cfg.grill is null.
   if (cfg.grill) runCtx.grill = createGrillHelper(cfg.grill);
@@ -266,6 +293,7 @@ function buildRunCtx(
       const reductionPct = originalChars === 0 ? 0 : Math.max(0, Math.round(((originalChars - compactedChars) / originalChars) * 100));
       return { text: '', originalChars, compactedChars, reductionPct };
     },
+    getSearch: () => searchTrace,
   };
 }
 
@@ -292,7 +320,7 @@ export async function runHarnessed<O extends Dict = Dict>(
   const controller = maxDurationMs ? new AbortController() : null;
   const isTimedOut = () => controller?.signal.aborted ?? false;
 
-  const { runCtx, getCacheUsage, getLessonsMatch, getBudgetSpentUsd, getWeeklyBudget, getLogCompact } = buildRunCtx(ctx, cfg, isTimedOut);
+  const { runCtx, getCacheUsage, getLessonsMatch, getBudgetSpentUsd, getWeeklyBudget, getLogCompact, getSearch } = buildRunCtx(ctx, cfg, isTimedOut);
   if (controller) runCtx.signal = controller.signal;
 
   const accounting = !!(cfg.monitor?.tokenAccounting || cfg.context);
@@ -435,6 +463,7 @@ export async function runHarnessed<O extends Dict = Dict>(
   const lessonsMatch = getLessonsMatch();
   const budget = budgetTrace();
   const logCompact = getLogCompact();
+  const search = getSearch();
   const proposal = proposalTrace();
   const trace = emit({
     status: 'success',
@@ -445,6 +474,7 @@ export async function runHarnessed<O extends Dict = Dict>(
     ...(lessonsMatch ? { lessonsMatch } : {}),
     ...(budget ? { budget } : {}),
     ...(logCompact ? { logCompact } : {}),
+    ...(search ? { search } : {}),
     ...(proposal ? { proposal } : {}),
   });
 

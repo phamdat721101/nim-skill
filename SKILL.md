@@ -8,9 +8,10 @@ description: |
   hook-native workspace/lessons/workrule primitives that run OUTSIDE
   runHarnessed(), gating a proposed Write/Edit before it lands, plus v0.9
   nim-logcompact (subprocess output compaction) and nim-propose (a plan-first
-  approval gate on nim-guard with owner-profile learning). Composes 15
+  approval gate on nim-guard with owner-profile learning), local memory search,
+  safe distillation, and read-only global-memory drift checks. Composes 19
   installable primitives. Zero network on the default path. MIT.
-version: 0.10.0
+version: 0.14.0
 author: phamdat721101 (PhamDat / @nxNim9)
 license: MIT
 tier: meta
@@ -70,6 +71,9 @@ sub_skills:
   - skills/nim-propose
   - skills/nim-grill
   - skills/nim-deliver
+  - skills/nim-search
+  - skills/nim-compact
+  - skills/nim-globalmem
 ---
 
 

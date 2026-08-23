@@ -8,7 +8,7 @@ Local-first harness tools for reliable agent work.
 - Preserve useful memory and compact noisy logs.
 - Keep a workspace ready for the next agent.
 
-**Status:** 15 primitives are shipped and installable. `nim-search` remains a PRD only.
+**Status:** 19 primitives are shipped and installable, including local memory search, safe distillation, and read-only global-memory drift audits.
 
 ## Start here
 
@@ -127,7 +127,14 @@ Every layer is opt-in. Omit a block or set it to `false` for a byte-identical no
     },
     "logCompact": {
       "strategy": "errors-only",
-      "maxLines": 100
+      "maxLines": 100,
+      "artifactDir": ".nim/log-artifacts"
+    },
+    "search": {
+      "topK": 3
+    },
+    "compact": {
+      "maxInvariants": 10
     }
   },
   "workspace": {
@@ -136,6 +143,9 @@ Every layer is opt-in. Omit a block or set it to `false` for a byte-identical no
   },
   "workrule": {
     "logFile": ".nim/agent-support-log.md"
+  },
+  "globalmem": {
+    "declarations": []
   }
 }
 ```
@@ -151,8 +161,35 @@ input
   -> { output, verified, heals, checks, trace }
 
 optional helpers available to execute():
-  ctx.context | ctx.memory | ctx.cache | ctx.lessons | ctx.logCompact
+  ctx.context | ctx.memory | ctx.cache | ctx.lessons | ctx.logCompact | ctx.search | ctx.compact
 ```
+
+## 🧠 Memory and search for agent teams
+
+Use the memory loop to retrieve the right local evidence instead of adding every past log to every prompt.
+
+- 🔎 Search prior decisions, incidents, lessons, and handoffs:
+
+  ```bash
+  nim-skill search "payment rail crash" --files .nim/lessons.jsonl docs/state/active_session.md --top-k 3
+  ```
+
+- 🧹 Distill a caller-reviewed JSON candidate into a separate sibling file. The append-only source is never edited:
+
+  ```bash
+  nim-skill compact apply --source .nim/agent-support-log.md \
+    --output .nim/agent-support-log.distilled.md --candidate candidate.json
+  ```
+
+- 🧾 Run noisy commands with `--enforce --logcompact`; when `artifactDir` is configured, truncated raw output has a local `artifact://…` pointer.
+
+- 🧭 Audit deliberately duplicated project guidance without automatically copying it:
+
+  ```bash
+  nim-skill globalmem audit --name team-rules
+  ```
+
+Prompt guideline: **search first, read only the top relevant chunks, verify against source and tests, then record a concise durable lesson or handoff.** Keep secrets and chat transcripts out of memory files; treat search results as leads, not proof.
 
 ## Daily commands
 
@@ -286,11 +323,14 @@ services by default.
 | `nim-propose` | Explicit pause, human approval, and owner-profile plan scaffolding. |
 | `nim-grill` | Structured design interrogation and enforcer-verified PRD compilation. |
 | `nim-deliver` | Product-owner delivery contract, rationale, environment readiness, and post-delivery proof. |
+| `nim-search` | Header-aware local BM25 recall over memory, lesson, and archive files. |
+| `nim-compact` | Strict candidate validation and separate distilled-memory artifacts; source logs remain immutable. |
+| `nim-globalmem` | Read-only hash audit for drift across declared local memory copies. |
 
 `ctx.memory` is a harness helper, not a separate installable skill. Enable it for
 the local verify-result cache and episodic priors shown in the configuration example.
 
-`nim-search` is documented in [its PRD](./docs/prd/13-master-prd-v07-nim-search.md), not shipped.
+`nim-search` supersedes the unbuilt PRD-13 target corpus with the memory/lesson/archive corpus in PRD 20.
 
 ## Use from TypeScript
 

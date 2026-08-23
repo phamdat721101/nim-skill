@@ -8,6 +8,9 @@
 
 import { compact } from './compact.js';
 import type { CompactResult, LogCompactConfig, LogCompactHelper } from './types.js';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { sha256 } from '../security/content-hash.js';
 
 function pctReduction(originalChars: number, compactedChars: number): number {
   if (originalChars === 0) return 0;
@@ -21,7 +24,17 @@ export function createLogCompactHelper(cfg: LogCompactConfig): LogCompactHelper 
       const text = compact(raw, cfg);
       const originalChars = raw.length;
       const compactedChars = text.length;
-      return { text, originalChars, compactedChars, reductionPct: pctReduction(originalChars, compactedChars) };
+      let artifactUri: string | undefined;
+      if (cfg.artifactDir && compactedChars < originalChars) {
+        const hash = sha256(raw).slice(0, 32);
+        try {
+          mkdirSync(cfg.artifactDir, { recursive: true });
+          const path = join(cfg.artifactDir, `${hash}.log`);
+          if (!existsSync(path)) writeFileSync(path, raw, 'utf8');
+          artifactUri = `artifact://${hash}`;
+        } catch { /* artifact persistence is best-effort, like every local store */ }
+      }
+      return { text, originalChars, compactedChars, reductionPct: pctReduction(originalChars, compactedChars), ...(artifactUri ? { artifactUri } : {}) };
     },
   };
 }

@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { capLines, filterErrors, compact } from '../src/logcompact/compact.js';
 import { createLogCompactHelper } from '../src/logcompact/index.js';
+import { existsSync, readFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 function lines(n: number, factory: (i: number) => string = (i) => `line ${i}`): string {
   return Array.from({ length: n }, (_, i) => factory(i)).join('\n');
@@ -137,5 +140,17 @@ describe('createLogCompactHelper', () => {
     expect(result.originalChars).toBe(0);
     expect(result.compactedChars).toBe(0);
     expect(result.reductionPct).toBe(0);
+  });
+
+  it('persists a content-addressed raw artifact only when output was truncated', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'nim-artifact-'));
+    const input = lines(200);
+    const result = createLogCompactHelper({ strategy: 'cap', maxLines: 2, artifactDir: dir }).compact(input);
+    expect(result.artifactUri).toMatch(/^artifact:\/\//);
+    const hash = result.artifactUri!.replace('artifact://', '');
+    expect(readFileSync(join(dir, `${hash}.log`), 'utf8')).toBe(input);
+    const untouched = createLogCompactHelper({ strategy: 'cap', maxLines: 100, artifactDir: dir }).compact('short');
+    expect(untouched.artifactUri).toBeUndefined();
+    expect(existsSync(join(dir, `${hash}.log`))).toBe(true);
   });
 });

@@ -27,10 +27,13 @@ import type {
   LessonsConfig,
   LogCompactConfig,
   GrillConfig,
+  CompactConfig,
+  SearchConfig,
   VerifyStrategy,
   EnforceMode,
 } from './harness/types.js';
 import type { DeliveryConfig } from './deliver/index.js';
+import type { GlobalMemoryDeclaration } from './globalmem/types.js';
 
 // ─── Zod schemas ─────────────────────────────────────────────────────────
 
@@ -168,7 +171,11 @@ const logCompactSchema = z.object({
   maxLines: z.number().int().positive().optional(),
   strategy: z.enum(['cap', 'errors-only', 'incremental']).optional(),
   escalateOnEmpty: z.boolean().optional(),
+  artifactDir: z.string().optional(),
 });
+
+const compactSchema = z.object({ outputSuffix: z.string().optional(), maxInvariants: z.number().int().positive().optional() });
+const searchSchema = z.object({ topK: z.number().int().positive().optional(), minScore: z.number().nonnegative().optional() });
 
 /**
  * `grill` is NESTED inside `harnessSchema` (same category/reasoning as
@@ -193,6 +200,8 @@ const harnessSchema = z.object({
   cache: z.union([cacheSchema, z.literal(false)]).optional(),
   lessons: z.union([lessonsSchema, z.literal(false)]).optional(),
   logCompact: z.union([logCompactSchema, z.literal(false)]).optional(),
+  compact: z.union([compactSchema, z.literal(false)]).optional(),
+  search: z.union([searchSchema, z.literal(false)]).optional(),
   grill: z.union([grillSchema, z.literal(false)]).optional(),
 });
 
@@ -266,12 +275,15 @@ const workruleSchema = z.object({
   logFile: z.string().optional(),
 });
 
+const globalmemSchema = z.object({ declarations: z.array(z.object({ name: z.string().min(1), paths: z.array(z.string().min(1)).min(1) })).optional() });
+
 const nimJsonSchema = z.object({
   harness: harnessSchema.optional(),
   baseline: baselineSchema.optional(),
   profile: profileSchema.optional(),
   workspace: workspaceSchema.optional(),
   workrule: workruleSchema.optional(),
+  globalmem: globalmemSchema.optional(),
 });
 
 /** Validate + fill defaults for the `baseline` nim.json block. Never folded into harnessSchema. */
@@ -427,7 +439,12 @@ export interface ResolvedLogCompact {
   maxLines: number;
   strategy: 'cap' | 'errors-only' | 'incremental';
   escalateOnEmpty: boolean;
+  artifactDir?: string;
 }
+
+export interface ResolvedCompactConfig { outputSuffix: string; maxInvariants: number; }
+export interface ResolvedSearchConfig { topK: number; minScore: number; }
+export interface ResolvedGlobalMemConfig { declarations: GlobalMemoryDeclaration[]; }
 
 export interface ResolvedGrillConfig {
   store: string;
@@ -448,6 +465,8 @@ export interface ResolvedHarnessConfig {
   lessons: ResolvedLessons | null;
   logCompact: ResolvedLogCompact | null;
   grill: ResolvedGrillConfig | null;
+  compact: ResolvedCompactConfig | null;
+  search: ResolvedSearchConfig | null;
   /** Lessons storage used by costGate even when the runtime lessons helper is not injected. */
   costGateLessons: ResolvedLessons | null;
 }
@@ -590,8 +609,12 @@ function resolveLogCompact(c: LogCompactConfig): ResolvedLogCompact {
     maxLines: c.maxLines ?? 100,
     strategy: c.strategy ?? 'errors-only',
     escalateOnEmpty: c.escalateOnEmpty ?? true,
+    ...(c.artifactDir ? { artifactDir: c.artifactDir } : {}),
   };
 }
+
+function resolveCompact(c: CompactConfig): ResolvedCompactConfig { return { outputSuffix: c.outputSuffix ?? '.distilled.md', maxInvariants: c.maxInvariants ?? 10 }; }
+function resolveSearch(c: SearchConfig): ResolvedSearchConfig { return { topK: c.topK ?? 5, minScore: c.minScore ?? 0 }; }
 
 function resolveGrillConfig(c: GrillConfig): ResolvedGrillConfig {
   return {
@@ -627,6 +650,8 @@ export function resolveConfig(input: HarnessConfig = {}): ResolvedHarnessConfig 
     cache: parsed.cache ? resolveCache(parsed.cache) : null,
     lessons: parsed.lessons ? resolveLessons(parsed.lessons) : null,
     logCompact: parsed.logCompact ? resolveLogCompact(parsed.logCompact) : null,
+    compact: parsed.compact ? resolveCompact(parsed.compact) : null,
+    search: parsed.search ? resolveSearch(parsed.search) : null,
     grill: parsed.grill ? resolveGrillConfig(parsed.grill) : null,
     costGateLessons: guard?.costGate ? resolveLessons(parsed.lessons || {}) : null,
   };
@@ -678,6 +703,17 @@ export function loadWorkruleJson(cwd: string = process.cwd()): unknown {
   if (!existsSync(file)) return {};
   const raw = JSON.parse(readFileSync(file, 'utf8')) as unknown;
   return nimJsonSchema.parse(raw).workrule ?? {};
+}
+
+/** Load the top-level global-memory declarations; absent is a valid empty audit. */
+export function loadGlobalMemJson(cwd: string = process.cwd()): unknown {
+  const file = resolve(cwd, 'nim.json');
+  if (!existsSync(file)) return {};
+  return nimJsonSchema.parse(JSON.parse(readFileSync(file, 'utf8')) as unknown).globalmem ?? {};
+}
+
+export function resolveGlobalMemConfig(input: unknown = {}): ResolvedGlobalMemConfig {
+  return { declarations: globalmemSchema.parse(input ?? {}).declarations ?? [] };
 }
 
 /** Validate + fill defaults for the `workrule` nim.json block. */

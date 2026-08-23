@@ -18,6 +18,8 @@ export interface LogCompactConfig {
   strategy?: CompactStrategy;
   /** If filtering yields nothing, fall back to a capped-but-unfiltered slice rather than hiding output. Default true. */
   escalateOnEmpty?: boolean;
+  /** Optional local directory for retrievable, content-addressed raw artifacts. */
+  artifactDir?: string;
 }
 
 export interface CompactResult {
@@ -26,6 +28,8 @@ export interface CompactResult {
   compactedChars: number;
   /** 0-100, rounded. Never negative — a result larger than its input still reports 0, not a negative number. */
   reductionPct: number;
+  /** Present only when artifactDir is configured and compaction removed content. */
+  artifactUri?: string;
 }
 
 export interface LogCompactHelper {

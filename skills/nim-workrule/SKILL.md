@@ -7,7 +7,7 @@ description: |
   over full-file reads, no new files unless essential, and mandatory
   local-only tracking of how nim-skill's own primitives helped THIS task
   (which primitive fired, what it caught, how much context/cache it saved).
-  Six checkable rules (WR-01..WR-06), advisory by default — same
+  Seven checkable rules (WR-01..WR-07), advisory by default — same
   enforce-don't-instruct discipline as nim-baseline, applied one level up
   (to the agent's own editing behavior, not the content it produces).
 version: 0.1.0
@@ -24,7 +24,7 @@ install: npx github:phamdat721101/nim-skill add nim-workrule
 
 # nim-workrule
 
-Six rules an agent runs against **its own editing behavior**, not the
+Seven rules an agent runs against **its own editing behavior**, not the
 content it produces (that's `nim-baseline`'s job). This is the working
 rule installed once per project, in `.nim/workrule.md` (gitignored, same as
 every other `.nim/*` file) — read it at the start of a task, self-check
@@ -38,8 +38,9 @@ against it during, append the tracked-memory entry (WR-06) at the end.
 | **WR-04** | Partial reads, no new files unless essential | Did I read only the relevant function/section (not the whole file) where a partial read would do, and did I check whether an existing file/module can hold this logic before creating a new one? |
 | **WR-05** | High quality, high performance, simple to deploy | Does the change keep the byte-identical-off / no-new-runtime-deps discipline nim-skill already ships (config-gated, `npx`-installable, zero new required dependency)? |
 | **WR-06** | Tracked memory (gitignored) | Did I append an entry to `.nim/agent-support-log.md` recording which nim-skill primitive fired, what it caught/prevented, and — if `nim-cache`/`nim-index`/`nim-context` were involved — the measured token/context saving for this specific task? |
+| **WR-07** | Pre-delivery contract | Did I verify environment/secret bindings, transport policy, collateral dependency behavior, and delivery evidence before calling work complete? |
 
-`nim-skill workrule check` prints the six questions (no LLM call — this is
+`nim-skill workrule check` prints the seven questions (no LLM call — this is
 a self-check prompt, not an automated linter; WR-01..WR-05 are judgment
 calls a heuristic can't safely automate, same caution `nim-baseline`
 applies to `BL-DERIVABLE`/`BL-LINTABLE`). WR-06 is the one rule with a

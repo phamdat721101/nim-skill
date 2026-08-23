@@ -3,6 +3,15 @@
 All notable changes to `nim-skill`. Format loosely follows Keep-a-Changelog;
 every layer is additive + config-gated (absent/`false` ⇒ byte-identical bare run).
 
+## [0.14.0] — 2026-08-23 · Distillation, Recall Search, and Global Memory
+
+### Added
+
+- **`nim-search`** — deterministic BM25 recall over pure, header-aware Markdown chunks, with runtime helper and CLI file search.
+- **`nim-compact`** — strict local candidate validation and atomic sibling distilled artifacts; append-only sources are never modified.
+- **`nim-globalmem`** — read-only SHA-256 drift audits for explicitly declared local memory copies; no merge or sync behavior.
+- **`nim-logcompact` artifact pointers** — opt-in content-addressed raw-log artifacts when compaction truncates output.
+
 ## [0.11.0] — 2026-08-18 · Ground-Truth Discipline
 
 ### Added

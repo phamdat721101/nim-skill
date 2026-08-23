@@ -11,7 +11,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { VERSION } from './index.js';
-import { loadNimJson, mergeHarness, resolveConfig, loadBaselineJson, resolveBaselineConfig, loadWorkspaceJson, resolveWorkspaceConfig, loadWorkruleJson, resolveWorkruleConfig } from './config.js';
+import { loadNimJson, mergeHarness, resolveConfig, loadBaselineJson, resolveBaselineConfig, loadWorkspaceJson, resolveWorkspaceConfig, loadWorkruleJson, resolveWorkruleConfig, loadGlobalMemJson, resolveGlobalMemConfig } from './config.js';
 import { runHarnessed, HarnessExecutionError } from './harness/runtime.js';
 import { verifyOrHeal } from './enforcer/output-enforcer.js';
 import { renderDashboard } from './monitor/dashboard.js';
@@ -37,6 +37,9 @@ import { appendHandoff, createFeatureBrief, initializeWorkspace } from './worksp
 import { deliveryBriefTemplate, runDeliveryCheck } from './deliver/index.js';
 import { createMemoryHelper, verifyKey } from './memory/index.js';
 import { createLogCompactHelper } from './logcompact/index.js';
+import { createSearchHelper } from './search/index.js';
+import { createCompactor, validateCompactionOutput } from './compact/index.js';
+import { createGlobalMemoryAuditor } from './globalmem/index.js';
 import type { HarnessConfig, SkillDef } from './harness/types.js';
 
 function runShell(cmd: string): { code: number; stdout: string; stderr: string } {
@@ -132,6 +135,53 @@ program
       process.exitCode = 1;
     }
 });
+
+program
+  .command('search')
+  .argument('<query>', 'free-text recall query')
+  .requiredOption('--files <paths...>', 'memory, lesson, or archive files to search')
+  .option('--top-k <n>', 'maximum ranked results', '5')
+  .option('--min-score <n>', 'minimum BM25 score', '0')
+  .description('Search local memory-like Markdown/text files using deterministic BM25 ranking.')
+  .action((query: string, opts: { files: string[]; topK: string; minScore: string }) => {
+    try {
+      const results = createSearchHelper({}).searchFiles(query, opts.files, { topK: Number(opts.topK), minScore: Number(opts.minScore) });
+      process.stdout.write(results.map((result) => `${result.score.toFixed(4)}\t${result.sourcePath}\t${result.headerPath.join(' > ')}\n${result.text}`).join('\n\n') + (results.length ? '\n' : ''));
+    } catch (err) { process.stderr.write(`nim: ${(err as Error).message}\n`); process.exitCode = 1; }
+  });
+
+const compactCmd = program.command('compact').description('Validate and write a separate, curated memory-distillation artifact.');
+compactCmd
+  .command('apply')
+  .requiredOption('--source <path>', 'append-only source identity; never read or modified')
+  .requiredOption('--output <path>', 'separate distilled output path')
+  .requiredOption('--candidate <path>', 'candidate JSON file, or - for stdin')
+  .description('Validate a CompactionOutput and atomically write the sibling distilled artifact.')
+  .action((opts: { source: string; output: string; candidate: string }) => {
+    try {
+      const raw = opts.candidate === '-' ? readFileSync(0, 'utf8') : readFileSync(opts.candidate, 'utf8');
+      const candidate = validateCompactionOutput(JSON.parse(raw));
+      const result = createCompactor({}).apply({ sourcePath: opts.source, outputPath: opts.output }, candidate);
+      process.stdout.write(JSON.stringify(result) + '\n');
+    } catch (err) { process.stderr.write(`nim: ${(err as Error).message}\n`); process.exitCode = 1; }
+  });
+
+const globalmemCmd = program.command('globalmem').description('Read-only cross-project memory drift audit.');
+globalmemCmd
+  .command('audit')
+  .option('--name <name>', 'configured declaration name')
+  .option('--path <paths...>', 'ad-hoc paths to compare')
+  .description('Hash declared memory copies and report whether they remain in sync.')
+  .action((opts: { name?: string; path?: string[] }) => {
+    try {
+      const configured = resolveGlobalMemConfig(loadGlobalMemJson()).declarations;
+      const declaration = opts.path?.length
+        ? { name: opts.name ?? 'ad-hoc', paths: opts.path }
+        : configured.find((item) => item.name === opts.name) ?? (opts.name ? undefined : configured[0]);
+      if (!declaration) { process.stdout.write('nim: no declarations configured\n'); return; }
+      process.stdout.write(JSON.stringify(createGlobalMemoryAuditor().auditFiles(declaration), null, 2) + '\n');
+    } catch (err) { process.stderr.write(`nim: ${(err as Error).message}\n`); process.exitCode = 1; }
+  });
 
 // ─── nim-skill deliver ─────────────────────────────────────────────────────
 

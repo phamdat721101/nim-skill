@@ -6,7 +6,7 @@ description: |
   (default — keep error-marker lines + context, drop the rest), incremental
   (a total-count + head/tail summary for very large output). Grounded in a
   measured 60-96% token-cost reduction on shell/log output (bswen.com, 2026-03-02).
-version: 0.9.0
+version: 0.14.0
 author: phamdat721101 (PhamDat / @nxNim9)
 license: MIT
 tier: primitive
@@ -28,11 +28,12 @@ category as `cache`/`context`/`memory`/`lessons` — a per-`runHarnessed()`-call
 
 ```ts
 // injected as ctx.logCompact when harness.logCompact is set:
-const { text, originalChars, compactedChars, reductionPct } = ctx.logCompact.compact(rawStdout);
+const { text, originalChars, compactedChars, reductionPct, artifactUri } = ctx.logCompact.compact(rawStdout);
 ```
 
 Config (`nim.json` → harness.logCompact):
-`{ maxLines: 100, strategy: "cap"|"errors-only"|"incremental", escalateOnEmpty: true }`.
+`{ maxLines: 100, strategy: "cap"|"errors-only"|"incremental", escalateOnEmpty: true, artifactDir?: ".nim/log-artifacts" }`.
+When `artifactDir` is set and output is truncated, the raw local text is retained at a content-addressed `artifact://…` URI.
 
 CLI:
 

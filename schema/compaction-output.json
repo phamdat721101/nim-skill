@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CompactionOutput",
+  "type": "object",
+  "required": ["updatedInvariants", "archiveEntry", "resetScratchpad"],
+  "properties": {
+    "updatedInvariants": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "archiveEntry": { "type": "object", "required": ["date", "taskName", "rootCause", "resolution"], "properties": { "date": { "type": "string" }, "taskName": { "type": "string" }, "rootCause": { "type": "string" }, "resolution": { "type": "string" }, "modifiedFiles": { "type": "array", "items": { "type": "string" } } }, "additionalProperties": false },
+    "resetScratchpad": { "type": "string" }
+  },
+  "additionalProperties": false
+}

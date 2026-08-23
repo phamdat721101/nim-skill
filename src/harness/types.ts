@@ -8,6 +8,8 @@
  */
 
 import type { Lesson, TriggerShape } from '../lessons/types.js';
+import type { CompactConfig, CompactHelper } from '../compact/types.js';
+import type { SearchConfig, SearchHelper, SearchTrace } from '../search/types.js';
 
 // ─── Verify strategies (enforcer) ────────────────────────────────────────────
 
@@ -140,6 +142,8 @@ export interface TraceRecord {
   lessonsMatch?: LessonsMatchTrace;
   /** v0.9 nim-logcompact — set only when harness.logCompact is configured AND ctx.logCompact.compact() was called this run. */
   logCompact?: LogCompactResult;
+  /** v0.14 nim-search — populated only when ctx.search.search() runs. */
+  search?: SearchTrace;
   /** v0.9 nim-propose — set only when guard.propose.require is configured (populated on both the deny path and the allowed/success path). */
   proposal?: ProposalTrace;
   /** v0.8 nim-guard — set only when guard.taskBudgetUsd/taskBudgetTokens is configured. */
@@ -315,7 +319,11 @@ export interface LogCompactConfig {
   maxLines?: number;
   strategy?: 'cap' | 'errors-only' | 'incremental';
   escalateOnEmpty?: boolean;
+  artifactDir?: string;
 }
+
+export type { CompactConfig } from '../compact/types.js';
+export type { SearchConfig } from '../search/types.js';
 
 // ─── Injected ctx helpers (interfaces here; implementations in their modules) ─
 
@@ -387,6 +395,7 @@ export interface LogCompactResult {
   originalChars: number;
   compactedChars: number;
   reductionPct: number;
+  artifactUri?: string;
 }
 
 export interface LogCompactHelper {
@@ -433,6 +442,8 @@ export interface HarnessConfig {
   cache?: CacheConfig | false;
   lessons?: LessonsConfig | false;
   logCompact?: LogCompactConfig | false;
+  compact?: CompactConfig | false;
+  search?: SearchConfig | false;
   /** v1.0 nim-grill — interrogation session helper. */
   grill?: GrillConfig | false;
 }
@@ -455,6 +466,8 @@ export interface SkillContext {
   lessons?: LessonsHelper;
   /** v0.9 nim-logcompact — opt-in, injected only when harness.logCompact is configured. */
   logCompact?: LogCompactHelper;
+  compact?: CompactHelper;
+  search?: SearchHelper;
   /** v0.8 nim-guard — opt-in live spend accumulation, injected only when a per-task budget is configured. */
   budget?: BudgetHelper;
   /** v1.0 nim-grill — opt-in interrogation session helper, injected only when harness.grill is configured. */
