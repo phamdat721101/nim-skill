@@ -38,6 +38,11 @@ export interface DeliveryReport {
 
 export type DeliveryCommandRunner = (command: string) => { ok: boolean; detail?: string };
 
+export { systemMapPath, systemMapTemplate, parseSystemMap, validateSystemMap } from './map.js';
+export { generateThreatMatrix } from './chaos.js';
+export { verifySystemMap, format3LineHandover, type DeliveryTestRunner } from './verify.js';
+export { EDGE_IDS, type EdgeId, type DeliveryTaskType, type DeliveryVerifyReport, type EdgeProof, type SystemMap, type SystemMapStatus, type ThreatVector } from './types.js';
+
 const REQUIRED_BRIEF_SECTIONS = [
   'client outcome', 'audience', 'scope', 'non-goals', 'alternatives considered',
   'selected approach and why', 'risks', 'acceptance criteria', 'rollout and rollback',

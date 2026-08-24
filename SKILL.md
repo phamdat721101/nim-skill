@@ -11,7 +11,7 @@ description: |
   approval gate on nim-guard with owner-profile learning), local memory search,
   safe distillation, and read-only global-memory drift checks. Composes 19
   installable primitives. Zero network on the default path. MIT.
-version: 0.14.0
+version: 0.15.0
 author: phamdat721101 (PhamDat / @nxNim9)
 license: MIT
 tier: meta

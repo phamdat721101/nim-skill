@@ -43,6 +43,16 @@
               "commands": { "type": "array", "items": { "type": "string" } },
               "evidenceFile": { "type": "string" }
             }
+          },
+          "e2e": {
+            "type": "object",
+            "description": "Optional strict pre-write System Map gate. Disabled unless enabled and featureId are supplied.",
+            "properties": {
+              "enabled": { "type": "boolean", "default": false },
+              "featureId": { "type": "string" },
+              "mapDir": { "type": "string", "default": "docs/features" },
+              "codePaths": { "type": "array", "items": { "type": "string" }, "default": ["src/"] }
+            }
           }
         }
       }

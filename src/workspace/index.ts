@@ -14,6 +14,7 @@ import type { ResolvedWorkspaceConfig } from '../config.js';
 import { checkLocationMatch, checkStaleness, checkPlanMutex, checkNoBacktrack, deriveOffStackByPath } from './rules.js';
 import { scanOffStackSignal } from './signal-scan.js';
 import { scanExistenceOverlap, readWorkspaceArtifacts, type ExistingArtifact } from './existence-scan.js';
+import { parseSystemMap, systemMapPath } from '../deliver/map.js';
 
 export interface WorkspaceProposal {
   filePath: string;
@@ -76,6 +77,19 @@ function buildStrictPlanEvidence(cfg: ResolvedWorkspaceConfig, proposal: Workspa
   ];
 }
 
+function buildDeliveryGateEvidence(cfg: ResolvedWorkspaceConfig, proposal: WorkspaceProposal): CheckResult[] {
+  const gate = cfg.deliveryGate;
+  if (!gate || !gate.codePaths.some((prefix) => proposal.filePath.startsWith(prefix))) return [];
+  const path = systemMapPath(gate.featureId, gate.mapDir);
+  if (!existsSync(path)) return [{ strategy: 'DELIVERY-MAP', pass: false, reason: `approved System Map missing: ${path}` }];
+  try {
+    const map = parseSystemMap(readFileSync(path, 'utf8'));
+    return [{ strategy: 'DELIVERY-MAP', pass: map.taskType === 'patch' || map.status === 'Approved' || map.status === 'Implementing' || map.status === 'Done', reason: `System Map '${path}' must be Approved before feature code writes` }];
+  } catch (err) {
+    return [{ strategy: 'DELIVERY-MAP', pass: false, reason: (err as Error).message }];
+  }
+}
+
 /**
  * Never-loosen-on-absence for a stale liveness file that doesn't exist yet:
  * evaluated separately from the missing-file early-return above so a
@@ -124,6 +138,11 @@ export function createWorkspaceGuard(cfg: ResolvedWorkspaceConfig): WorkspaceGua
       if (failingStrictPlanCheck) {
         return { recommendation: 'BLOCK', reason: failingStrictPlanCheck.reason ?? 'strict plan mode check failed', evidence, staleWarning };
       }
+
+      const deliveryGateEvidence = buildDeliveryGateEvidence(cfg, proposal);
+      evidence.push(...deliveryGateEvidence);
+      const failedDeliveryGate = deliveryGateEvidence.find((c) => !c.pass);
+      if (failedDeliveryGate) return { recommendation: 'BLOCK', reason: failedDeliveryGate.reason ?? 'delivery map gate failed', evidence, staleWarning };
 
       // 3. Existence — overlap against discovered workspace artifacts.
       const candidates: ExistingArtifact[] = readWorkspaceArtifacts('.', '**/SKILL.md');

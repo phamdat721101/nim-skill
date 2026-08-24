@@ -34,7 +34,7 @@ import { readMcpConfig, readSkillsDir } from './index-meter/adapters.js';
 import { detectTier } from './profile/index.js';
 import { tightenFor } from './profile/tiers.js';
 import { appendHandoff, createFeatureBrief, initializeWorkspace } from './workspace/bootstrap.js';
-import { deliveryBriefTemplate, runDeliveryCheck } from './deliver/index.js';
+import { deliveryBriefTemplate, runDeliveryCheck, format3LineHandover, generateThreatMatrix, parseSystemMap, systemMapPath, systemMapTemplate, verifySystemMap } from './deliver/index.js';
 import { createMemoryHelper, verifyKey } from './memory/index.js';
 import { createLogCompactHelper } from './logcompact/index.js';
 import { createSearchHelper } from './search/index.js';
@@ -186,6 +186,77 @@ globalmemCmd
 // ─── nim-skill deliver ─────────────────────────────────────────────────────
 
 const deliverCmd = program.command('deliver').description('Product-owner delivery contract: rationale, environment readiness, verification, and post-delivery evidence.');
+
+deliverCmd
+  .command('map')
+  .requiredOption('--feature <id>', 'feature identifier')
+  .option('--type <type>', 'feature | patch', 'feature')
+  .option('--dir <dir>', 'project directory', '.')
+  .description('Create a deterministic System Map for an E2E delivery workflow; existing maps are never overwritten.')
+  .action((opts: { feature: string; type: string; dir: string }) => {
+    if (opts.type !== 'feature' && opts.type !== 'patch') {
+      process.stderr.write('nim: --type must be feature or patch\n');
+      process.exitCode = 1;
+      return;
+    }
+    const root = resolve(opts.dir);
+    const workspace = resolveWorkspaceConfig(loadWorkspaceJson(root));
+    const path = systemMapPath(opts.feature, workspace.deliver?.briefDir ?? 'docs/features');
+    const target = join(root, path);
+    if (!existsSync(target)) {
+      mkdirSync(resolve(target, '..'), { recursive: true });
+      writeFileSync(target, systemMapTemplate(opts.feature, opts.type));
+      process.stdout.write(`nim: created ${path}\n`);
+    } else process.stdout.write(`nim: kept existing ${path}\n`);
+  });
+
+deliverCmd
+  .command('chaos')
+  .requiredOption('--map <path>', 'System Map Markdown path')
+  .option('--dir <dir>', 'project directory', '.')
+  .description('Generate the five mandatory, seam-anchored chaos threats from a System Map.')
+  .action((opts: { map: string; dir: string }) => {
+    try {
+      const map = parseSystemMap(readFileSync(resolve(opts.dir, opts.map), 'utf8'));
+      process.stdout.write(JSON.stringify(generateThreatMatrix(map), null, 2) + '\n');
+    } catch (err) {
+      process.stderr.write(`nim: ${(err as Error).message}\n`);
+      process.exitCode = 1;
+    }
+  });
+
+deliverCmd
+  .command('verify')
+  .requiredOption('--map <path>', 'System Map Markdown path')
+  .option('--dir <dir>', 'project directory', '.')
+  .option('--json', 'emit the full verification report as JSON')
+  .description('Strictly verify five local edge proofs and structured seam logs, then append a concise handover.')
+  .action(async (opts: { map: string; dir: string; json?: boolean }) => {
+    try {
+      const root = resolve(opts.dir);
+      const map = parseSystemMap(readFileSync(resolve(root, opts.map), 'utf8'));
+      const harness = resolveConfig(loadNimJson(root));
+      const compact = createLogCompactHelper(harness.logCompact ?? { strategy: 'errors-only', maxLines: 100, escalateOnEmpty: true });
+      const report = verifySystemMap(root, map, (command) => {
+        const output = runShell(command);
+        const detail = compact.compact(`${output.stdout}\n${output.stderr}`).text.trim();
+        return { ok: output.code === 0, detail: detail || `exit ${output.code}` };
+      });
+      const enforced = await verifyOrHeal({ passed: report.passed }, { strategies: [{ kind: 'result', successPath: 'passed', successValue: true }], maxHeals: 0, mode: 'strict' });
+      if (opts.json) process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+      else for (const item of report.checks) process.stdout.write(`[${item.pass ? 'PASS' : 'FAIL'}] ${item.strategy}${item.reason ? ` — ${item.reason}` : ''}\n`);
+      if (!enforced.verified || !report.passed) {
+        process.exitCode = 1;
+        return;
+      }
+      const handover = format3LineHandover(map.featureId, `${map.input.entrypoint} -> ${map.output.state}`, map.edgeProofs.map((proof) => proof.edgeId));
+      appendHandoff(root, { goal: `verify ${map.featureId}`, output: handover, next: 'Feature verified; continue with normal delivery check or release workflow.' });
+      process.stdout.write('nim: appended verified delivery handoff\n');
+    } catch (err) {
+      process.stderr.write(`nim: ${(err as Error).message}\n`);
+      process.exitCode = 1;
+    }
+  });
 
 deliverCmd
   .command('propose')

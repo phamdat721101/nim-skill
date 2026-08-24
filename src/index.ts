@@ -4,7 +4,7 @@
  * Each primitive is also exported standalone.
  */
 
-export const VERSION = '0.14.0';
+export const VERSION = '0.15.0';
 
 // Core
 export { runHarnessed, HarnessExecutionError } from './harness/runtime.js';
@@ -84,6 +84,8 @@ export { createWorkruleHelper, WORKRULE_QUESTIONS, type AgentSupportEntry } from
 // v1.1 — product-owner delivery contract
 export { deliveryBriefTemplate, runDeliveryCheck, checkEnvironmentContract } from './deliver/index.js';
 export type { DeliveryConfig, DeliveryProfileConfig, DeliveryPhase, DeliveryReport, DeliveryCommandRunner } from './deliver/index.js';
+export { systemMapPath, systemMapTemplate, parseSystemMap, validateSystemMap, generateThreatMatrix, verifySystemMap, format3LineHandover, EDGE_IDS } from './deliver/index.js';
+export type { SystemMap, SystemMapStatus, DeliveryTaskType, ThreatVector, EdgeProof, DeliveryVerifyReport, DeliveryTestRunner } from './deliver/index.js';
 
 // v1.0 — grill
 export {

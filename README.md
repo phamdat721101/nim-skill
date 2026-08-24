@@ -303,6 +303,24 @@ compacted and secret-redacted before it is included in a failure report. The gat
 never reads cloud secret values, calls DNS, deploys software, or contacts external
 services by default.
 
+### E2E feature discipline
+
+For non-trivial features, extend the same `nim-deliver` surface with a System Map,
+five seam-anchored failure cases, and executable local proof before marking work done:
+
+```bash
+nim-skill deliver map --feature customer-payment-notifications --type feature
+# Fill the fenced `json nim-deliver` block, then set status to Approved.
+nim-skill deliver chaos --map docs/features/customer-payment-notifications-map.md
+nim-skill deliver verify --map docs/features/customer-payment-notifications-map.md
+```
+
+`workspace.deliver.e2e` is disabled by default. When enabled with a `featureId`
+and strict workspace hooks, writes under configured code paths are denied until the
+matching System Map is approved. This hard gate is available only on hosts that
+install the existing workspace hook adapter; other hosts can still run the CLI
+workflow and verification commands.
+
 ## Installable primitives
 
 | Primitive | Use it for |

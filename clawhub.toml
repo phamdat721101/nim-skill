@@ -1,6 +1,6 @@
 [package]
 name = "nim-skill"
-version = "0.14.0"
+version = "0.15.0"
 license = "MIT"
 description = "Open, local-first, host-portable agent-harness toolkit: runHarnessed() + reliability primitives as drop-in skills."
 repository = "https://github.com/phamdat721101/nim-skill"

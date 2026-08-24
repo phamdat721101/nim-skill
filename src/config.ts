@@ -252,6 +252,12 @@ export const workspaceSchema = z.object({
     briefDir: z.string().optional(),
     requireWorkrule: z.boolean().optional(),
     profiles: z.record(z.object({ contract: z.string(), configFiles: z.array(z.string()).optional(), commands: z.array(z.string()).optional(), evidenceFile: z.string().optional() })).optional(),
+    e2e: z.object({
+      enabled: z.boolean().optional(),
+      featureId: z.string().min(1).optional(),
+      mapDir: z.string().min(1).optional(),
+      codePaths: z.array(z.string().min(1)).optional(),
+    }).optional(),
   }).optional(),
   /**
    * v0.13 nim-workspace strict plan mode — opt-in mutex + no-backtrack
@@ -323,6 +329,7 @@ export interface ResolvedWorkspaceConfig {
   livenessCadence: string[];
   mode: 'warn' | 'strict' | 'off';
   deliver: DeliveryConfig | null;
+  deliveryGate: { featureId: string; mapDir: string; codePaths: string[] } | null;
   /** v0.13 — null when `strictPlanMode.enabled` is absent/false (rollback contract: never invoked). */
   strictPlanMode: { maxConcurrentActive: number; requireOverrideOnReopen: boolean } | null;
 }
@@ -354,6 +361,11 @@ export function resolveWorkspaceConfig(input: unknown = {}): ResolvedWorkspaceCo
       requireWorkrule: parsed.deliver.requireWorkrule ?? true,
       profiles: parsed.deliver.profiles ?? {},
     } satisfies DeliveryConfig : null,
+    deliveryGate: parsed.deliver?.e2e?.enabled && parsed.deliver.e2e.featureId ? {
+      featureId: parsed.deliver.e2e.featureId,
+      mapDir: parsed.deliver.e2e.mapDir ?? parsed.deliver.briefDir ?? 'docs/features',
+      codePaths: parsed.deliver.e2e.codePaths ?? ['src/'],
+    } : null,
     strictPlanMode: parsed.strictPlanMode?.enabled ? {
       maxConcurrentActive: parsed.strictPlanMode.maxConcurrentActive ?? 1,
       requireOverrideOnReopen: parsed.strictPlanMode.requireOverrideOnReopen ?? true,

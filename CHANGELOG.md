@@ -3,6 +3,21 @@
 All notable changes to `nim-skill`. Format loosely follows Keep-a-Changelog;
 every layer is additive + config-gated (absent/`false` ⇒ byte-identical bare run).
 
+## [Unreleased] — `nim-deliver` E2E delivery protocol
+
+### Added
+
+- `nim-skill deliver map|chaos|verify`: dependency-free fenced-JSON System Maps,
+  five deterministic seam-anchored failure vectors, strict per-edge local proof,
+  structured seam-log checks, and verified three-line handoff output.
+- Optional `workspace.deliver.e2e` strict hook gate. It is disabled by default and
+  blocks configured feature-code paths until the configured System Map is approved.
+
+### Changed
+
+- The v0.15 E2E workflow extends `nim-deliver`; it does not introduce a parallel
+  primitive, CLI namespace, YAML parser, or generic regex-only coverage check.
+
 ## [0.14.0] — 2026-08-23 · Distillation, Recall Search, and Global Memory
 
 ### Added
