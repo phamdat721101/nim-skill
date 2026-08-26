@@ -13,6 +13,8 @@ import { resolve } from 'node:path';
 import { z } from 'zod';
 import { deriveOffStackByPath } from './workspace/rules.js';
 import { basePricePerToken } from './cache/roi.js';
+import { throttleSchema, resolveThrottleConfig } from './throttle/schema.js';
+import type { ResolvedThrottleConfig } from './throttle/types.js';
 import type {
   HarnessConfig,
   GuardConfig,
@@ -203,6 +205,8 @@ const harnessSchema = z.object({
   compact: z.union([compactSchema, z.literal(false)]).optional(),
   search: z.union([searchSchema, z.literal(false)]).optional(),
   grill: z.union([grillSchema, z.literal(false)]).optional(),
+  /** v0.16 nim-throttle — Token-Thrift & Trajectory-Budget Protocol (PRD 26/27). */
+  throttle: z.union([throttleSchema, z.literal(false)]).optional(),
 });
 
 /**
@@ -481,6 +485,8 @@ export interface ResolvedHarnessConfig {
   search: ResolvedSearchConfig | null;
   /** Lessons storage used by costGate even when the runtime lessons helper is not injected. */
   costGateLessons: ResolvedLessons | null;
+  /** v0.16 nim-throttle. null when the `throttle` block is absent or `false` (rollback contract — no trajectory gate, no read clamping). */
+  throttle: ResolvedThrottleConfig | null;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────
@@ -666,6 +672,7 @@ export function resolveConfig(input: HarnessConfig = {}): ResolvedHarnessConfig 
     search: parsed.search ? resolveSearch(parsed.search) : null,
     grill: parsed.grill ? resolveGrillConfig(parsed.grill) : null,
     costGateLessons: guard?.costGate ? resolveLessons(parsed.lessons || {}) : null,
+    throttle: parsed.throttle ? resolveThrottleConfig(parsed.throttle) : null,
   };
 }
 

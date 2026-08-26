@@ -24,7 +24,7 @@ export function parseTraces(jsonl: string): TraceRecord[] {
     .filter((t): t is TraceRecord => t !== null);
 }
 
-export type DashboardView = 'default' | 'savings' | 'cache' | 'budget' | 'logcompact' | 'propose';
+export type DashboardView = 'default' | 'savings' | 'cache' | 'budget' | 'logcompact' | 'propose' | 'tokens';
 
 const pctOf = (a: number, b: number): string => (b === 0 ? 'n/a' : `${Math.round((a / b) * 100)}%`);
 
@@ -123,6 +123,42 @@ export function summarizeLogCompact(traces: TraceRecord[]): string {
   ].join('\n');
 }
 
+/** v0.16 nim-throttle Pillar 4 — task ranking by cache-read volume, cache-hit efficiency %, and USD burn (PRD 26's own incident table shape). */
+export function summarizeTokens(traces: TraceRecord[]): string {
+  const withThrottle = traces.filter((t) => t.throttle !== undefined);
+  if (withThrottle.length === 0) return 'nim monitor (tokens) — no throttle traces yet (run with `nim-skill run ... --throttle` or record via src/monitor/tokens.ts).';
+
+  const bySkill = new Map<string, { steps: number; tokensIn: number; tokensOut: number; cacheRead: number; cacheWrite: number; costUsd: number }>();
+  for (const t of withThrottle) {
+    const th = t.throttle!;
+    const agg = bySkill.get(t.skill) ?? { steps: 0, tokensIn: 0, tokensOut: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0 };
+    agg.steps += 1;
+    agg.tokensIn += th.tokensIn;
+    agg.tokensOut += th.tokensOut;
+    agg.cacheRead += th.cacheReadTokens;
+    agg.cacheWrite += th.cacheWriteTokens;
+    agg.costUsd += th.costUsd;
+    bySkill.set(t.skill, agg);
+  }
+
+  const ranked = [...bySkill.entries()].sort((a, b) => b[1].costUsd - a[1].costUsd);
+  const lines = ranked.map(([skill, agg]) => {
+    const hitRate = pctOf(agg.cacheRead, agg.cacheRead + agg.cacheWrite);
+    return `  ${skill}  steps=${agg.steps}  cacheRead=${agg.cacheRead}  cacheWrite=${agg.cacheWrite}  hit-rate=${hitRate}  cost=~$${agg.costUsd.toFixed(6)}`;
+  });
+
+  const totalCost = ranked.reduce((sum, [, agg]) => sum + agg.costUsd, 0);
+  const totalCacheRead = ranked.reduce((sum, [, agg]) => sum + agg.cacheRead, 0);
+
+  return [
+    `nim monitor (tokens) — ${withThrottle.length} throttled step(s) across ${ranked.length} task(s)`,
+    `  total cache reads: ${totalCacheRead} tokens`,
+    `  total cost:        ~$${totalCost.toFixed(6)}`,
+    `  ranked by cost:`,
+    ...lines,
+  ].join('\n');
+}
+
 /** v0.9 nim-propose — approval-gate aggregate: how many runs required a proposal, how many were approved vs denied, and the deny-reason breakdown. */
 export function summarizeProposal(traces: TraceRecord[]): string {
   const withProposal = traces.filter((t) => t.proposal !== undefined);
@@ -195,5 +231,6 @@ export function renderDashboard(traceFile: string, view: DashboardView = 'defaul
   if (view === 'budget') return summarizeBudget(traces);
   if (view === 'logcompact') return summarizeLogCompact(traces);
   if (view === 'propose') return summarizeProposal(traces);
+  if (view === 'tokens') return summarizeTokens(traces);
   return summarize(traces);
 }

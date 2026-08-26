@@ -8,7 +8,7 @@ Local-first harness tools for reliable agent work.
 - Preserve useful memory and compact noisy logs.
 - Keep a workspace ready for the next agent.
 
-**Status:** 19 primitives are shipped and installable, including local memory search, safe distillation, and read-only global-memory drift audits.
+**Status:** 19 primitives are shipped and installable, including local memory search, safe distillation, and read-only global-memory drift audits. `nim-throttle` (v0.16.0 — trajectory step ceiling, checkpoint handoff, read-slice clamping, and a token-burn dashboard) is implemented and CLI-usable today; its `skills/nim-throttle/SKILL.md` install manifest is not shipped yet, so use it directly via `nim-skill throttle`/`run --throttle`/`monitor --tokens` in this repo.
 
 ## Start here
 
@@ -98,6 +98,25 @@ Don't want to touch code at all? The same rules also work as a **pure
 system prompt** — a fixed error-log format, a remediation table, and a
 loop-breaking rule, no install required:
 [`docs/share-nim-remediation-loop.md`](./docs/share-nim-remediation-loop.md).
+
+### Manage a large project's working process + query its data
+
+On a big, long-lived codebase the risk isn't bad code — it's losing track
+of state: unbroken 200+ step turns that quietly balloon cost, 700-line
+files read in full when 40 lines would do, and answering "did we already
+hit this?" from memory instead of checking `.nim/lessons.jsonl`.
+
+```bash
+nim-skill throttle check                 # trajectory ceiling + read-slice policy
+nim-skill run "npm test" --throttle       # auto-compact noisy test/build output
+nim-skill monitor --tokens                # rank tasks by cache-read volume + cost
+nim-skill search "payment rail crash" --files .nim/lessons.jsonl
+```
+
+`nim-throttle` forces a 3-line checkpoint handoff once a turn hits its step
+ceiling (default 20), instead of letting one unbroken turn run indefinitely
+and re-read an ever-growing context. Full walkthrough:
+[`docs/share-nim-throttle-large-project-workflow.md`](./docs/share-nim-throttle-large-project-workflow.md).
 
 ## Configure the harness
 
@@ -209,6 +228,8 @@ Prompt guideline: **search first, read only the top relevant chunks, verify agai
 | Record deployment evidence | `nim-skill deliver record --profile qa --evidence qa-evidence.json` |
 | Run the post-delivery gate | `nim-skill deliver check --profile qa --brief docs/features/<feature>.md --phase post` |
 | Self-check an editing session | `nim-skill workrule check` |
+| Check the trajectory/read-clamp policy | `nim-skill throttle check` |
+| See token/cache burn ranked by task | `nim-skill monitor --tokens` |
 
 ## Workspace tutorial
 

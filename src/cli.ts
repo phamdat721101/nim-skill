@@ -24,6 +24,11 @@ import { createLessonsHelper } from './lessons/index.js';
 import { proposalHashFor, proposalPathFor } from './guard/propose.js';
 import { createOwnerProfileStore, buildScaffold, sectionsPresentIn } from './guard/owner-profile.js';
 import { createLessonsStore } from './lessons/store.js';
+import { resolveThrottleConfig } from './throttle/schema.js';
+import { isNoisyTestCommand } from './throttle/test-interceptor.js';
+import { buildCheckpointSnapshot, writeCheckpoint, DEFAULT_CHECKPOINT_PATH } from './throttle/checkpoint.js';
+import { checkWr04MandatoryFilter } from './workrule/rules/wr04.js';
+import { createWorkruleStore as createWorkruleStoreForRules } from './workrule/store.js';
 import { createWorkruleHelper, WORKRULE_QUESTIONS } from './workrule/index.js';
 import { createGrillStore, loadQuestionsForDomain, compilePRD, formatPRDMarkdown, writePRDFile, sessionIdFor } from './grill/index.js';
 import { resolveConfig as _resolveGrillCfg } from './config.js';
@@ -79,12 +84,19 @@ program
   .option('--enforce', 'require a non-empty, non-error result (adds a nonempty check)')
   .option('--monitor', 'force console + file trace exporters')
   .option('--logcompact', 'compact stdout/stderr before verification/output (default strategy: errors-only, 100 lines)')
+  .option('--throttle', 'nim-throttle Pillar 2 — auto-detect noisy test/build commands (gradlew, npm test, vitest, ...) and force errors-only log compaction per the resolved throttle policy')
   .description('Run a command inside the harness (guard/error-handler/monitor/enforcer via nim.json).')
-  .action(async (cmd: string, opts: { enforce?: boolean; monitor?: boolean; logcompact?: boolean }) => {
+  .action(async (cmd: string, opts: { enforce?: boolean; monitor?: boolean; logcompact?: boolean; throttle?: boolean }) => {
     let harness: HarnessConfig = loadNimJson();
     if (opts.monitor) harness = mergeHarness(harness, { monitor: { exporters: ['console', 'file'] } });
     if (opts.enforce) harness = mergeHarness(harness, { enforcer: { strategies: [{ kind: 'schema', required: ['stdout'] }], mode: 'strict', maxHeals: 0 } });
     if (opts.logcompact) harness = mergeHarness(harness, { logCompact: {} });
+    if (opts.throttle) {
+      const throttleCfg = resolveThrottleConfig(harness.throttle === false ? {} : harness.throttle ?? {});
+      if (isNoisyTestCommand(cmd, throttleCfg)) {
+        harness = mergeHarness(harness, { logCompact: { strategy: 'errors-only', maxLines: throttleCfg.subprocessCompaction.maxOutputLines } });
+      }
+    }
 
     const skill: SkillDef = {
       name: 'cli.run',
@@ -378,9 +390,10 @@ program
   .option('--budget', 'show the v0.8 per-task budget consumption + timeout view')
   .option('--logcompact', 'show the v0.9 output-compaction reduction view')
   .option('--propose', 'show the v0.9 proposal-gate approval/denial view')
+  .option('--tokens', 'show the v0.16 nim-throttle token-burn view: task ranking by cache-read volume, cache-hit efficiency %, and USD cost')
   .description('Render the local run dashboard from the JSONL trace file.')
-  .action((_action: string, opts: { file: string; savings?: boolean; cache?: boolean; budget?: boolean; logcompact?: boolean; propose?: boolean }) => {
-    const view = opts.savings ? 'savings' : opts.cache ? 'cache' : opts.budget ? 'budget' : opts.logcompact ? 'logcompact' : opts.propose ? 'propose' : 'default';
+  .action((_action: string, opts: { file: string; savings?: boolean; cache?: boolean; budget?: boolean; logcompact?: boolean; propose?: boolean; tokens?: boolean }) => {
+    const view = opts.savings ? 'savings' : opts.cache ? 'cache' : opts.budget ? 'budget' : opts.logcompact ? 'logcompact' : opts.propose ? 'propose' : opts.tokens ? 'tokens' : 'default';
     process.stdout.write(renderDashboard(opts.file, view) + '\n');
   });
 
@@ -787,9 +800,13 @@ const workruleCmd = program.command('workrule').description('The six-rule workin
 
 workruleCmd
   .command('check')
-  .description('Print the six-question self-check checklist (no LLM call — a self-check prompt, not an automated linter).')
+  .description('Print the six-question self-check checklist (no LLM call — a self-check prompt, not an automated linter), plus the WR-04 mechanical mandatory-filter check (nim-throttle Pillar 2).')
   .action(() => {
     for (const q of WORKRULE_QUESTIONS) process.stdout.write(`[${q.id}] ${q.question}\n`);
+    const cfg = resolveWorkruleConfig(loadWorkruleJson());
+    const store = createWorkruleStoreForRules({ logFile: cfg.logFile });
+    const wr04 = checkWr04MandatoryFilter(store);
+    if (wr04.triggered) process.stdout.write(`${wr04.message}\n`);
   });
 
 workruleCmd
@@ -827,6 +844,30 @@ workruleCmd
       return;
     }
     for (const e of all) process.stdout.write(`${e.at}  [${e.primitive}]  ${e.effect}${e.tokensSaved !== undefined ? `  (~${e.tokensSaved} tokens saved)` : ''}\n`);
+  });
+
+const throttleCmd = program.command('throttle').description('Token-Thrift & Trajectory-Budget Protocol: micro-turn step ceiling, checkpoint handoff, and read/test-output clamping policy (PRD 26/27).');
+
+throttleCmd
+  .command('check')
+  .description('Print the resolved throttle policy (maxStepsPerTurn, warningStepThreshold, maxFileLineRead, turnCostBudgetUsd, subprocess compaction).')
+  .action(() => {
+    const harness = loadNimJson();
+    const resolved = resolveThrottleConfig(harness.throttle === false ? {} : harness.throttle ?? {});
+    process.stdout.write(`${JSON.stringify(resolved, null, 2)}\n`);
+  });
+
+throttleCmd
+  .command('checkpoint')
+  .requiredOption('--progress <text>', 'one-line summary of what the turn accomplished so far')
+  .requiredOption('--next <text>', 'one-line summary of what remains')
+  .option('--steps-used <n>', 'steps consumed when the checkpoint was forced', '20')
+  .option('--path <file>', 'checkpoint target file', DEFAULT_CHECKPOINT_PATH)
+  .description('Write a forced 3-line trajectory checkpoint to docs/state/active_session.md (Pillar 1 hard-gate handoff).')
+  .action((opts: { progress: string; next: string; stepsUsed: string; path: string }) => {
+    const snapshot = buildCheckpointSnapshot({ progress: opts.progress, next: opts.next, stepsUsed: Number(opts.stepsUsed) });
+    const result = writeCheckpoint(snapshot, opts.path);
+    process.stdout.write(`nim: checkpoint written -> ${result.path}\n`);
   });
 
 // ─── nim-skill grill ─────────────────────────────────────────────────────────

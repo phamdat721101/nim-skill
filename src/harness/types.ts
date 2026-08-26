@@ -148,6 +148,22 @@ export interface TraceRecord {
   proposal?: ProposalTrace;
   /** v0.8 nim-guard — set only when guard.taskBudgetUsd/taskBudgetTokens is configured. */
   budget?: BudgetTrace;
+  /** v0.16 nim-throttle Pillar 4 — set only when a throttled step's token/cache metrics are recorded via src/monitor/tokens.ts. */
+  throttle?: ThrottleTrace;
+}
+
+/**
+ * v0.16 nim-throttle Pillar 4 — one turn-step's token/cache/cost metrics
+ * (PRD 26 §4/Pillar 4, PRD 27 Task 4.1). Additive-only TraceRecord field;
+ * never restructures the existing trace shape.
+ */
+export interface ThrottleTrace {
+  stepIndex: number;
+  tokensIn: number;
+  tokensOut: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  costUsd: number;
 }
 
 // ─── Config vocabulary (nim.json → harness) ──────────────────────────────────
@@ -446,6 +462,8 @@ export interface HarnessConfig {
   search?: SearchConfig | false;
   /** v1.0 nim-grill — interrogation session helper. */
   grill?: GrillConfig | false;
+  /** v0.16 nim-throttle — Token-Thrift & Trajectory-Budget Protocol (PRD 26/27). */
+  throttle?: import('../throttle/types.js').ThrottleConfig | false;
 }
 
 // ─── Skill definition ─────────────────────────────────────────────────────

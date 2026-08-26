@@ -3,10 +3,24 @@
 All notable changes to `nim-skill`. Format loosely follows Keep-a-Changelog;
 every layer is additive + config-gated (absent/`false` ⇒ byte-identical bare run).
 
-## [Unreleased] — `nim-deliver` E2E delivery protocol
+## [Unreleased] — `nim-throttle` Token-Thrift & Trajectory-Budget Protocol + `nim-deliver` E2E delivery protocol
 
 ### Added
 
+- **`nim-throttle`** (PRD 26/27) — `TrajectoryGate` step-ceiling (default 20,
+  warning at 18) with a forced 3-line checkpoint handoff to
+  `docs/state/active_session.md`; a read-slicer that blocks unsliced reads
+  over `maxFileLineRead` (default 200) with a concrete suggested range; a
+  test-command interceptor that routes noisy build/test output through the
+  existing `nim-logcompact` errors-only strategy (`nim-skill run ... --throttle`);
+  and a `nim-skill monitor --tokens` dashboard ranking tasks by cache-read
+  volume, cache-hit %, and USD cost. Additive-only: a new `throttle` block in
+  `nim.json` (absent/`false` ⇒ byte-identical no-op) and a new `throttle`
+  field on `TraceRecord`. New hook-decision functions in `src/hooks/pre-tool.ts`
+  are siblings to the existing Claude Code/Kiro CLI adapters — those two files
+  are unmodified. Not yet installable as a standalone skill (no
+  `skills/nim-throttle/SKILL.md` manifest yet); use directly via this repo's
+  CLI. See [`docs/share-nim-throttle-large-project-workflow.md`](./docs/share-nim-throttle-large-project-workflow.md).
 - `nim-skill deliver map|chaos|verify`: dependency-free fenced-JSON System Maps,
   five deterministic seam-anchored failure vectors, strict per-edge local proof,
   structured seam-log checks, and verified three-line handoff output.
