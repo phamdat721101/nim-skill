@@ -6,7 +6,7 @@
  * into a host skills directory (Claude / Kiro / Cursor / custom).
  */
 
-import { cpSync, mkdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, existsSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 /** Package root (dist/.. or src/.. — both resolve to the repo root). */
 export const PKG_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-export const PRIMITIVES = ['nim-guard', 'nim-error-handler', 'nim-monitor', 'nim-enforcer', 'nim-context', 'nim-cache', 'nim-baseline', 'nim-index', 'nim-profile', 'nim-workspace', 'nim-lessons', 'nim-workrule', 'nim-logcompact', 'nim-propose', 'nim-grill', 'nim-deliver', 'nim-search', 'nim-compact', 'nim-globalmem'] as const;
+export const PRIMITIVES = ['nim-guard', 'nim-error-handler', 'nim-monitor', 'nim-enforcer', 'nim-context', 'nim-cache', 'nim-baseline', 'nim-index', 'nim-profile', 'nim-workspace', 'nim-lessons', 'nim-workrule', 'nim-logcompact', 'nim-propose', 'nim-grill', 'nim-deliver', 'nim-search', 'nim-compact', 'nim-globalmem', 'nim-auditor'] as const;
 
 /** The umbrella skill installs as a folder containing the top-level SKILL.md. */
 export const UMBRELLA = 'nim-skill';
@@ -107,4 +107,53 @@ export function installSkill(name: string, dir: string, root: string = PKG_ROOT,
     if (lean) applyLean(join(dest, 'SKILL.md'));
   }
   return dest;
+}
+
+export type HookHost = keyof typeof HOST_DIRS;
+
+/** Native config path and events used by the default profile. Kept data-only so
+ * tests can assert exact host contracts without touching a real home directory. */
+export function lifecycleRegistration(host: HookHost, command = `node ${join(PKG_ROOT, 'dist', 'cli.js')} hooks dispatch`): { path: string; config: Record<string, unknown> } {
+  const root = homedir();
+  const event = (name: string) => `${command} --host ${host} --event ${name} --stdin`;
+  if (host === 'kiro') return { path: join(root, '.kiro', 'hooks', 'nim-skill.json'), config: { version: 'v1', hooks: [{ name: 'nim-skill-start', trigger: 'AgentSpawn', action: { type: 'command', command: event('start') } }, { name: 'nim-skill-pre-tool', trigger: 'PreToolUse', matcher: '*', action: { type: 'command', command: event('pre-tool') } }, { name: 'nim-skill-post-tool', trigger: 'PostToolUse', matcher: '*', action: { type: 'command', command: event('post-tool') } }, { name: 'nim-skill-end', trigger: 'AgentStop', action: { type: 'command', command: event('end') } }] } };
+  const native = host === 'cursor' ? { sessionStart: [{ command: event('start') }], preToolUse: [{ command: event('pre-tool'), failClosed: true }], postToolUse: [{ command: event('post-tool') }], sessionEnd: [{ command: event('end') }] } : host === 'codex' ? { SessionStart: [{ matcher: '', hooks: [{ type: 'command', command: event('start') }] }], PreToolUse: [{ matcher: '', hooks: [{ type: 'command', command: event('pre-tool') }] }], PostToolUse: [{ matcher: '', hooks: [{ type: 'command', command: event('post-tool') }] }], SessionEnd: [{ matcher: '', hooks: [{ type: 'command', command: event('end') }] }] } : { SessionStart: [{ matcher: '', hooks: [{ type: 'command', command: event('start') }] }], PreToolUse: [{ matcher: '', hooks: [{ type: 'command', command: event('pre-tool') }] }], PostToolUseFailure: [{ matcher: '', hooks: [{ type: 'command', command: event('post-tool') }] }], SessionEnd: [{ matcher: '', hooks: [{ type: 'command', command: event('end') }] }] };
+  const file = host === 'cursor' ? join(root, '.cursor', 'hooks.json') : join(root, `.${host}`, 'hooks.json');
+  return { path: file, config: { description: 'nim-skill default lifecycle hooks', hooks: native } };
+}
+
+/** Transactional replacement for the nim-owned config file. Host configuration
+ * remains opt-in through `install`; unrelated JSON is merged at the top level. */
+export function installLifecycleHooks(host: HookHost): string {
+  const registration = lifecycleRegistration(host); mkdirSync(dirname(registration.path), { recursive: true });
+  let current: Record<string, unknown> = {};
+  if (existsSync(registration.path)) {
+    try { current = JSON.parse(readFileSync(registration.path, 'utf8')) as Record<string, unknown>; } catch { throw new Error(`nim: cannot safely merge invalid JSON at ${registration.path}`); }
+  }
+  const backup = `${registration.path}.nim-skill-${Date.now()}.bak`;
+  if (existsSync(registration.path)) cpSync(registration.path, backup);
+  const tmp = `${registration.path}.nim-skill-tmp`;
+  const currentHooks = current.hooks;
+  const installedHooks = registration.config.hooks;
+  const isOurs = (value: unknown): boolean => JSON.stringify(value).includes('hooks dispatch');
+  let hooks: unknown = installedHooks;
+  if (Array.isArray(currentHooks) && Array.isArray(installedHooks)) hooks = [...currentHooks.filter((entry) => !isOurs(entry)), ...installedHooks];
+  else if (currentHooks && installedHooks && typeof currentHooks === 'object' && typeof installedHooks === 'object') {
+    hooks = Object.fromEntries([...new Set([...Object.keys(currentHooks as Record<string, unknown>), ...Object.keys(installedHooks as Record<string, unknown>)])].map((key) => {
+      const prior = (currentHooks as Record<string, unknown>)[key]; const next = (installedHooks as Record<string, unknown>)[key];
+      return [key, Array.isArray(prior) && Array.isArray(next) ? [...prior.filter((entry) => !isOurs(entry)), ...next] : next ?? prior];
+    }));
+  }
+  try { writeFileSync(tmp, `${JSON.stringify({ ...current, ...registration.config, hooks }, null, 2)}\n`); renameSync(tmp, registration.path); } catch (error) { if (existsSync(backup)) cpSync(backup, registration.path); throw error; }
+  return registration.path;
+}
+
+/** Remove only nim-owned handlers, retaining unrelated host settings. */
+export function disableLifecycleHooks(host: HookHost): boolean {
+  const registration = lifecycleRegistration(host); if (!existsSync(registration.path)) return false;
+  let current: Record<string, unknown>; try { current = JSON.parse(readFileSync(registration.path, 'utf8')) as Record<string, unknown>; } catch { throw new Error(`nim: cannot safely edit invalid JSON at ${registration.path}`); }
+  const isOurs = (value: unknown): boolean => JSON.stringify(value).includes('hooks dispatch');
+  const source = current.hooks;
+  const hooks = Array.isArray(source) ? source.filter((entry) => !isOurs(entry)) : source && typeof source === 'object' ? Object.fromEntries(Object.entries(source as Record<string, unknown>).map(([key, value]) => [key, Array.isArray(value) ? value.filter((entry) => !isOurs(entry)) : value]).filter(([, value]) => !Array.isArray(value) || value.length > 0)) : source;
+  const tmp = `${registration.path}.nim-skill-tmp`; writeFileSync(tmp, `${JSON.stringify({ ...current, ...(hooks === undefined ? {} : { hooks }) }, null, 2)}\n`); renameSync(tmp, registration.path); return true;
 }

@@ -36,6 +36,8 @@ import type {
 } from './harness/types.js';
 import type { DeliveryConfig } from './deliver/index.js';
 import type { GlobalMemoryDeclaration } from './globalmem/types.js';
+import type { HooksConfig } from './hooks/types.js';
+import { DEFAULT_HOOKS } from './hooks/default-profile.js';
 
 // ─── Zod schemas ─────────────────────────────────────────────────────────
 
@@ -286,6 +288,13 @@ const workruleSchema = z.object({
 });
 
 const globalmemSchema = z.object({ declarations: z.array(z.object({ name: z.string().min(1), paths: z.array(z.string().min(1)).min(1) })).optional() });
+const hooksSchema = z.object({
+  enabled: z.boolean().optional(),
+  profile: z.literal('default').optional(),
+  memoryFiles: z.array(z.string().min(1)).length(2).optional(),
+  search: z.object({ topK: z.number().int().min(1).max(3).optional(), maxTokens: z.number().int().positive().optional() }).optional(),
+  auditor: z.object({ enabled: z.boolean().optional(), threshold: z.literal(4).optional(), mode: z.enum(['strict', 'warn', 'off']).optional(), store: z.string().min(1).optional() }).optional(),
+});
 
 const nimJsonSchema = z.object({
   harness: harnessSchema.optional(),
@@ -294,7 +303,21 @@ const nimJsonSchema = z.object({
   workspace: workspaceSchema.optional(),
   workrule: workruleSchema.optional(),
   globalmem: globalmemSchema.optional(),
+  hooks: hooksSchema.optional(),
 });
+
+/** Absent means no lifecycle integration for an existing project. */
+export function resolveHooksConfig(input: unknown): HooksConfig | null {
+  if (input === undefined || input === null) return null;
+  const parsed = hooksSchema.parse(input);
+  return {
+    enabled: parsed.enabled ?? DEFAULT_HOOKS.enabled,
+    profile: parsed.profile ?? 'default',
+    memoryFiles: parsed.memoryFiles ?? [...DEFAULT_HOOKS.memoryFiles],
+    search: { topK: parsed.search?.topK ?? 3, maxTokens: parsed.search?.maxTokens ?? DEFAULT_HOOKS.search.maxTokens },
+    auditor: { enabled: parsed.auditor?.enabled ?? true, threshold: 4, mode: parsed.auditor?.mode ?? 'strict', store: parsed.auditor?.store ?? '.nim/auditor' },
+  };
+}
 
 /** Validate + fill defaults for the `baseline` nim.json block. Never folded into harnessSchema. */
 export function resolveBaselineConfig(input: unknown = {}): {
@@ -690,6 +713,14 @@ export function loadNimJson(cwd: string = process.cwd()): HarnessConfig {
   if (!existsSync(file)) return {};
   const raw = JSON.parse(readFileSync(file, 'utf8')) as unknown;
   return nimJsonSchema.parse(raw).harness ?? {};
+}
+
+/** Load the lifecycle profile separately from the runtime harness. */
+export function loadHooksJson(cwd: string = process.cwd()): HooksConfig | null {
+  const file = resolve(cwd, 'nim.json');
+  if (!existsSync(file)) return null;
+  const parsed = nimJsonSchema.parse(JSON.parse(readFileSync(file, 'utf8')));
+  return resolveHooksConfig(parsed.hooks);
 }
 
 /** Load the `baseline` block from a nim.json in `cwd` (if present). Sibling to loadNimJson, same no-throw-on-missing contract. */

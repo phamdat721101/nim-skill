@@ -4,7 +4,7 @@
  * Each primitive is also exported standalone.
  */
 
-export const VERSION = '0.15.0';
+export const VERSION = '0.17.0';
 
 // Core
 export { runHarnessed, HarnessExecutionError } from './harness/runtime.js';
@@ -23,6 +23,8 @@ export {
   resolveWorkruleConfig,
   loadGlobalMemJson,
   resolveGlobalMemConfig,
+  loadHooksJson,
+  resolveHooksConfig,
   type ResolvedHarnessConfig,
   type ResolvedGuard,
   type ResolvedErrorHandler,
@@ -37,6 +39,13 @@ export {
   type ResolvedSearchConfig,
   type ResolvedGlobalMemConfig,
 } from './config.js';
+
+// v0.17 — default lifecycle hooks and repeated-failure auditor
+export { AuditorStore } from './hooks/store.js';
+export { actionId, failureFingerprint, normalizeText, validateReplan } from './hooks/auditor.js';
+export { dispatchHook } from './hooks/dispatch.js';
+export { DEFAULT_HOOKS, CANONICAL_HOOK_PROMPT, buildRecall, hookContext } from './hooks/default-profile.js';
+export type { HooksConfig, HookHost, HookEvent, FailureInput, AuditorDecision, ReplanInput, AuditorStatus } from './hooks/types.js';
 
 // Guard
 export { createGuard, GuardError, type Guard, type GuardReason } from './guard/guard.js';

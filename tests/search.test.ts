@@ -35,6 +35,13 @@ describe('nim-search', () => {
     expect(helper.searchFiles('payment', [file])).toHaveLength(1);
   });
 
+  it('splits JSONL and support-log table entries before ranking them', () => {
+    const jsonl = '{"what":"first repeated hook failure"}\n{"what":"auditor blocks fourth attempt"}';
+    const table = '| at | effect |\n|---|---|\n| one | hooks failure |\n| two | auditor replan |';
+    expect(chunkMarkdown('lessons.jsonl', jsonl, { minTokens: 1, maxTokens: 100 })).toHaveLength(2);
+    expect(chunkMarkdown('agent-support-log.md', table, { minTokens: 1, maxTokens: 100 })).toHaveLength(3);
+  });
+
   it('injects ctx.search only when configured and records the query trace', async () => {
     const result = await runHarnessed({ name: 'search-skill', version: 'test', harness: { search: {} }, execute: (_input, ctx) => {
       const chunks = chunkMarkdown('memory.md', '## Lesson\npayment rail crash');

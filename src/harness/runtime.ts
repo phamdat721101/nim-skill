@@ -29,10 +29,12 @@ import type {
 } from './types.js';
 import {
   resolveConfig,
+  loadHooksJson,
   type ResolvedEnforcer,
   type ResolvedErrorHandler,
   type ResolvedHarnessConfig,
 } from '../config.js';
+import { AuditorStore } from '../hooks/store.js';
 import { createGuard, GuardError } from '../guard/guard.js';
 import { checkProposal } from '../guard/propose.js';
 import { basePricePerToken } from '../cache/roi.js';
@@ -433,6 +435,19 @@ export async function runHarnessed<O extends Dict = Dict>(
     output = await executeWithTimeout<O>(skill, validated, runCtx, cfg.errorHandler, maxDurationMs, controller);
   } catch (err) {
     const cls = err instanceof HarnessExecutionError ? err.error.class : classify(err).class;
+    // A direct runHarnessed caller has no host PostToolUse event. When the
+    // project explicitly enabled hooks, persist this final classified failure
+    // under the caller's task/session identity so it cannot be forgotten.
+    const hookCfg = loadHooksJson();
+    if (hookCfg?.enabled && hookCfg.auditor.enabled) {
+      const taskId = String(ctx.taskId ?? ctx.agentId);
+      const message = err instanceof HarnessExecutionError ? err.error.message : classify(err).message;
+      new AuditorStore(hookCfg.auditor.store).recordFailure(taskId, {
+        source: 'harness', toolName: skill.name, actionKey: skill.name,
+        message, errorClass: cls, errorType: err instanceof HarnessExecutionError ? err.error.errorType : classify(err).errorType,
+        eventId: traceId,
+      });
+    }
     const trace = emit({ status: 'error', durationMs: dur(), errorClass: cls, ...roiFields('error', cls, false, 0, undefined), ...(budgetTrace() ? { budget: budgetTrace() } : {}) });
     if (err instanceof HarnessExecutionError) {
       err.trace = trace;

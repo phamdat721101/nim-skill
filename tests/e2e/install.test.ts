@@ -11,6 +11,7 @@ import {
   sourceOf,
   installSkill,
   HOST_DIRS,
+  lifecycleRegistration,
 } from '../../src/install.js';
 
 const TMP = '.nim-install-test';
@@ -91,5 +92,22 @@ describe('installSkill', () => {
       const dest = installSkill(p, TMP);
       expect(readFileSync(join(dest, 'SKILL.md'), 'utf8')).toMatch(new RegExp(`name: ${p}`));
     }
+  });
+});
+
+describe('default lifecycle registrations', () => {
+  it('declares a start, pre-tool, post-tool, and end path for every supported host', () => {
+    for (const host of ['claude', 'codex', 'kiro', 'cursor'] as const) {
+      const registration = lifecycleRegistration(host, 'nim-test-dispatch');
+      expect(registration.path).toContain(`.${host}`);
+      expect(JSON.stringify(registration.config)).toContain('--event start');
+      expect(JSON.stringify(registration.config)).toContain('--event pre-tool');
+      expect(JSON.stringify(registration.config)).toContain('--event post-tool');
+      expect(JSON.stringify(registration.config)).toContain('--event end');
+    }
+  });
+
+  it('uses its own packaged CLI path by default rather than PATH lookup', () => {
+    expect(JSON.stringify(lifecycleRegistration('codex').config)).toContain('dist/cli.js hooks dispatch');
   });
 });

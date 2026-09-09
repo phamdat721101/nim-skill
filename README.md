@@ -8,7 +8,7 @@ Local-first harness tools for reliable agent work.
 - Preserve useful memory and compact noisy logs.
 - Keep a workspace ready for the next agent.
 
-**Status:** 19 primitives are shipped and installable, including local memory search, safe distillation, and read-only global-memory drift audits. `nim-throttle` (v0.16.0 — trajectory step ceiling, checkpoint handoff, read-slice clamping, and a token-burn dashboard) is implemented and CLI-usable today; its `skills/nim-throttle/SKILL.md` install manifest is not shipped yet, so use it directly via `nim-skill throttle`/`run --throttle`/`monitor --tokens` in this repo.
+**Status:** 20 primitives are shipped and installable, including `nim-auditor`: default local host hooks, bounded BM25 recall, and a task-scoped fourth-attempt gate after three equivalent failures. `nim-throttle` (v0.16.0 — trajectory step ceiling, checkpoint handoff, read-slice clamping, and a token-burn dashboard) is implemented and CLI-usable today; its `skills/nim-throttle/SKILL.md` install manifest is not shipped yet, so use it directly via `nim-skill throttle`/`run --throttle`/`monitor --tokens` in this repo.
 
 ## Start here
 
@@ -16,6 +16,7 @@ Install every skill into detected hosts:
 
 ```bash
 npx github:phamdat721101/nim-skill install
+# Manifest-only rollback: npx github:phamdat721101/nim-skill install --no-hooks
 ```
 
 Create an agent-ready project workspace:

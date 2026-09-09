@@ -110,10 +110,13 @@ function initialSession(): string {
 function defaultNimJson(assessment: WorkspaceAssessment): string {
   return `${JSON.stringify({
     harness: {
+      errorHandler: { retries: 2, backoff: 'exp-jitter' },
       enforcer: { strategies: ['nonempty'], mode: 'strict', maxHeals: 0 },
       memory: { verifyCache: true, priors: true, store: '.nim/memory.jsonl', sessionStore: '.nim/sessions.jsonl' },
+      lessons: { store: '.nim/lessons.jsonl' },
       context: { progressive: true, maxInputTokens: 8000, onExceed: 'compact' },
       logCompact: { strategy: 'errors-only', maxLines: 100, escalateOnEmpty: true },
+      search: { topK: 3 },
     },
     workspace: {
       stack: assessment.stack,
@@ -127,6 +130,12 @@ function defaultNimJson(assessment: WorkspaceAssessment): string {
       },
     },
     workrule: { logFile: '.nim/agent-support-log.md' },
+    hooks: {
+      enabled: true, profile: 'default',
+      memoryFiles: ['.nim/agent-support-log.md', '.nim/lessons.jsonl'],
+      search: { topK: 3, maxTokens: 1500 },
+      auditor: { enabled: true, threshold: 4, mode: 'strict', store: '.nim/auditor' },
+    },
   }, null, 2)}\n`;
 }
 

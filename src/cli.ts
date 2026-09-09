@@ -11,12 +11,12 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { VERSION } from './index.js';
-import { loadNimJson, mergeHarness, resolveConfig, loadBaselineJson, resolveBaselineConfig, loadWorkspaceJson, resolveWorkspaceConfig, loadWorkruleJson, resolveWorkruleConfig, loadGlobalMemJson, resolveGlobalMemConfig } from './config.js';
+import { loadNimJson, mergeHarness, resolveConfig, loadBaselineJson, resolveBaselineConfig, loadWorkspaceJson, resolveWorkspaceConfig, loadWorkruleJson, resolveWorkruleConfig, loadGlobalMemJson, resolveGlobalMemConfig, loadHooksJson } from './config.js';
 import { runHarnessed, HarnessExecutionError } from './harness/runtime.js';
 import { verifyOrHeal } from './enforcer/output-enforcer.js';
 import { renderDashboard } from './monitor/dashboard.js';
 import { GuardError } from './guard/guard.js';
-import { PRIMITIVES, UMBRELLA, HOST_DIRS, resolveTargetDirs, expandTargets, sourceOf, installSkill } from './install.js';
+import { PRIMITIVES, UMBRELLA, HOST_DIRS, resolveTargetDirs, expandTargets, sourceOf, installSkill, installLifecycleHooks, disableLifecycleHooks, lifecycleRegistration } from './install.js';
 import { createBaselineLinter } from './baseline/index.js';
 import { createWorkspaceGuard } from './workspace/index.js';
 import { createIndexMeter } from './index-meter/index.js';
@@ -45,6 +45,10 @@ import { createLogCompactHelper } from './logcompact/index.js';
 import { createSearchHelper } from './search/index.js';
 import { createCompactor, validateCompactionOutput } from './compact/index.js';
 import { createGlobalMemoryAuditor } from './globalmem/index.js';
+import { DEFAULT_HOOKS } from './hooks/default-profile.js';
+import { dispatchHook } from './hooks/dispatch.js';
+import { AuditorStore } from './hooks/store.js';
+import type { HookEvent, HookHost, ReplanInput } from './hooks/types.js';
 import type { HarnessConfig, SkillDef } from './harness/types.js';
 
 function runShell(cmd: string): { code: number; stdout: string; stderr: string } {
@@ -436,8 +440,93 @@ program
   .option('--host <host>', 'target host: claude | kiro | cursor | codex')
   .option('--dir <path>', 'explicit host skills directory (overrides --host)')
   .option('--lean', 'install lean manifests (omit reference sections)')
+  .option('--no-hooks', 'install manifests only; do not register the default lifecycle hooks')
   .description('Install ALL nim-skill skills into detected agent hosts (zero-config alias of `add all`).')
-  .action((opts: { host?: string; dir?: string; lean?: boolean }) => performInstall([], opts));
+  .action((opts: { host?: string; dir?: string; lean?: boolean; noHooks?: boolean }) => {
+    performInstall([], opts);
+    if (!opts.noHooks && !opts.dir) {
+      const hosts = opts.host ? [opts.host] : Object.keys(HOST_DIRS);
+      try { for (const host of hosts) process.stdout.write(`nim: registered lifecycle hooks → ${installLifecycleHooks(host as keyof typeof HOST_DIRS)}\n`); }
+      catch (error) { process.stderr.write(`nim: ${(error as Error).message}\n`); process.exitCode = 1; }
+    }
+  });
+
+const hooksCmd = program.command('hooks').description('Default lifecycle hook dispatcher and diagnostics for supported local agent hosts.');
+
+hooksCmd
+  .command('dispatch')
+  .requiredOption('--host <host>', 'claude | codex | kiro | cursor')
+  .requiredOption('--event <event>', 'start | prompt | pre-tool | post-tool | end')
+  .option('--stdin', 'read native host payload JSON from stdin')
+  .description('Translate a native lifecycle event into local auditor state and host decision output.')
+  .action(async (opts: { host: string; event: string; stdin?: boolean }) => {
+    if (!['claude', 'codex', 'kiro', 'cursor'].includes(opts.host) || !['start', 'prompt', 'pre-tool', 'post-tool', 'end'].includes(opts.event)) {
+      process.stderr.write('nim: unsupported hooks host or event\n'); process.exitCode = 1; return;
+    }
+    let payload: Record<string, unknown> = {};
+    try { if (opts.stdin) payload = await readHookInputFromStdin(); } catch (error) { process.stderr.write(`${(error as Error).message}\n`); process.exitCode = 1; return; }
+    const cfg = loadHooksJson() ?? DEFAULT_HOOKS;
+    const result = dispatchHook(opts.host as HookHost, opts.event as HookEvent, payload, cfg);
+    if (result.output) process.stdout.write(`${JSON.stringify(result.output)}\n`);
+    if (result.stderr) process.stderr.write(`${result.stderr}\n`);
+    process.exitCode = result.exitCode;
+  });
+
+hooksCmd
+  .command('status')
+  .option('--json', 'emit machine-readable status')
+  .description('Report the effective lifecycle profile and local coverage boundary.')
+  .action((opts: { json?: boolean }) => {
+    const cfg = loadHooksJson() ?? DEFAULT_HOOKS;
+    const hosts = (['claude', 'codex', 'kiro', 'cursor'] as const).map((host) => {
+      const path = lifecycleRegistration(host).path;
+      const active = existsSync(path) && readFileSync(path, 'utf8').includes('hooks dispatch');
+      return { host, active, path };
+    });
+    const value = { configured: loadHooksJson() !== null, enabled: cfg.enabled, profile: cfg.profile, hosts, excluded: { codex: ['hosted tools', 'write_stdin follow-up'], kiro: ['stop cannot block completion'] } };
+    process.stdout.write(opts.json ? `${JSON.stringify(value)}\n` : `nim: hooks ${value.enabled ? 'enabled' : 'disabled'} (${hosts.filter((host) => host.active).map((host) => host.host).join(', ') || 'no registered hosts'})\n`);
+  });
+
+hooksCmd
+  .command('doctor')
+  .option('--host <host>', 'optional host to inspect')
+  .description('Read-only diagnostic for the declared lifecycle coverage boundary.')
+  .action((opts: { host?: string }) => {
+    const hosts = opts.host ? [opts.host] : ['claude', 'codex', 'kiro', 'cursor'];
+    if (hosts.some((host) => !['claude', 'codex', 'kiro', 'cursor'].includes(host))) { process.stderr.write('nim: unknown host\n'); process.exitCode = 1; return; }
+    for (const host of hosts) process.stdout.write(`nim: ${host}: dispatcher supported; verify host registration with hooks status after installation\n`);
+  });
+
+hooksCmd
+  .command('disable')
+  .requiredOption('--host <host>', 'claude | codex | kiro | cursor')
+  .description('Remove only nim-skill lifecycle registrations from one host.')
+  .action((opts: { host: string }) => {
+    if (!['claude', 'codex', 'kiro', 'cursor'].includes(opts.host)) { process.stderr.write('nim: unknown host\n'); process.exitCode = 1; return; }
+    try { process.stdout.write(`nim: ${disableLifecycleHooks(opts.host as keyof typeof HOST_DIRS) ? 'disabled' : 'no registration found'} ${opts.host}\n`); } catch (error) { process.stderr.write(`nim: ${(error as Error).message}\n`); process.exitCode = 1; }
+  });
+
+const auditorCmd = program.command('auditor').description('Task-scoped repeated-failure auditor and structured alternative-action gate.');
+auditorCmd
+  .command('status')
+  .option('--task <id>', 'task/session id', 'default')
+  .option('--json', 'emit JSON')
+  .action((opts: { task: string; json?: boolean }) => {
+    const cfg = loadHooksJson() ?? DEFAULT_HOOKS; const status = new AuditorStore(cfg.auditor.store).status(opts.task);
+    process.stdout.write(opts.json ? `${JSON.stringify(status)}\n` : `nim: task ${status.taskId}; ${status.failures.length} failure shape(s); ${status.blocked.length} action(s) blocked\n`);
+  });
+auditorCmd
+  .command('replan')
+  .requiredOption('--task <id>', 'task/session id')
+  .requiredOption('--fingerprint <id>', 'blocked failure fingerprint')
+  .requiredOption('--root-cause <text>', 'root cause hypothesis')
+  .requiredOption('--alternative <text...>', 'at least two alternatives')
+  .requiredOption('--selected <text>', 'selected alternative')
+  .requiredOption('--next-action <text>', 'materially different next action')
+  .action((opts: ReplanInput) => {
+    const cfg = loadHooksJson() ?? DEFAULT_HOOKS;
+    try { new AuditorStore(cfg.auditor.store).replan(opts); process.stdout.write(`nim: recorded replan for ${opts.fingerprint}\n`); } catch (error) { process.stderr.write(`${(error as Error).message}\n`); process.exitCode = 1; }
+  });
 
 const baselineCmd = program.command('baseline').description('Lint/scaffold/audit an agent memory file (AGENTS.md/CLAUDE.md-family).');
 

@@ -3,9 +3,11 @@
 All notable changes to `nim-skill`. Format loosely follows Keep-a-Changelog;
 every layer is additive + config-gated (absent/`false` ⇒ byte-identical bare run).
 
-## [Unreleased] — `nim-throttle` Token-Thrift & Trajectory-Budget Protocol + `nim-deliver` E2E delivery protocol
+## [Unreleased] — v0.17 default hooks, `nim-auditor`, `nim-throttle`, and `nim-deliver`
 
 ### Added
+
+- **`nim-auditor` / default hooks** — local lifecycle dispatch for Claude Code, Codex, Kiro CLI, and Cursor; bounded BM25 recall over support logs and lessons; redacted task-local failure fingerprints; fourth-attempt preflight denial after three matching failures; and a structured alternative-action replan command. Missing config remains a no-op for existing projects.
 
 - **`nim-throttle`** (PRD 26/27) — `TrajectoryGate` step-ceiling (default 20,
   warning at 18) with a forced 3-line checkpoint handoff to

@@ -23,6 +23,15 @@ function splitBody(body: string, maxTokens: number): string[] {
   return parts;
 }
 
+/** JSONL and Markdown tables have no headings, so split them at their durable
+ * record boundary before the normal token budget is applied. */
+function recordBodies(body: string): string[] {
+  const lines = body.split('\n').filter(Boolean);
+  if (lines.length > 1 && lines.every((line) => line.trim().startsWith('{'))) return lines;
+  const tableRows = lines.filter((line) => /^\|/.test(line) && !/^\|?\s*[-:| ]+\|/.test(line));
+  return tableRows.length > 1 ? tableRows : [body];
+}
+
 /** Header-aware, deterministic Markdown chunking. Short header sections stay atomic. */
 export function chunkMarkdown(sourcePath: string, text: string, opts: { minTokens?: number; maxTokens?: number } = {}): MemoryChunk[] {
   const minTokens = opts.minTokens ?? DEFAULT_MIN;
@@ -42,7 +51,8 @@ export function chunkMarkdown(sourcePath: string, text: string, opts: { minToken
   flush();
   return sections.flatMap(({ headers: path, body: lines }) => {
     const sectionBody = lines.join('\n').trim();
-    const bodies = estimateTokens(sectionBody) <= Math.max(maxTokens, minTokens) ? [sectionBody] : splitBody(sectionBody, maxTokens);
+    const records = recordBodies(sectionBody);
+    const bodies = records.flatMap((record) => estimateTokens(record) <= Math.max(maxTokens, minTokens) ? [record] : splitBody(record, maxTokens));
     return bodies.map((part) => {
       const chunkText = `${prefix(sourcePath, path)}\n${part}`;
       return { sourcePath, headerPath: path, text: chunkText, tokenEstimate: estimateTokens(chunkText) };
