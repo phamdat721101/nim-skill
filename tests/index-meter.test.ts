@@ -52,12 +52,12 @@ describe('readSkillsDir', () => {
 });
 
 describe('createIndexMeter', () => {
-  it('measure() on this repo\'s own skills/ tool surface stays low-risk (dogfood)', () => {
+  it('measure() reports the repository\'s own skills/ tool surface accurately (dogfood)', () => {
     const meter = createIndexMeter({ estimatedTurnsPerTask: 5, mcpConfigPath: '.mcp.json', skillsDir: 'skills' });
     const manifest = readSkillsDir('skills');
     const report = meter.measure(manifest);
     expect(report.toolCount).toBe(manifest.length);
-    expect(report.riskBand).toBe('low-risk'); // well under the 21-tool watch threshold at nim-skill's current scale
+    expect(report.riskBand).toBe('watch'); // nim-architect intentionally moves the installed surface across the 21-tool threshold
   });
 
   it('trim() keeps exactly the --keep list, never silently drops or adds', () => {

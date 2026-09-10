@@ -7,6 +7,7 @@
  *   add <primitive>  install a primitive's SKILL.md into a host skills dir
  */
 import { Command } from 'commander';
+import ts from 'typescript';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -48,6 +49,7 @@ import { createGlobalMemoryAuditor } from './globalmem/index.js';
 import { DEFAULT_HOOKS } from './hooks/default-profile.js';
 import { dispatchHook } from './hooks/dispatch.js';
 import { AuditorStore } from './hooks/store.js';
+import { DecisionLedger, auditRedFlags, compileArchitecture, groundArchitecture, scoreModuleDepth, sketchArchitecture } from './architect/index.js';
 import type { HookEvent, HookHost, ReplanInput } from './hooks/types.js';
 import type { HarnessConfig, SkillDef } from './harness/types.js';
 
@@ -81,6 +83,26 @@ program
   .name('nim-skill')
   .description('Local-first agent-harness toolkit: runHarnessed() + reliability primitives.')
   .version(VERSION);
+
+const architectCmd = program.command('architect').description('Local-first system architecture review and system design engine.');
+architectCmd.command('ground').argument('<target>').option('--query <query>', 'BM25 recall query', 'architecture design failure').action((target: string, opts: { query: string }) => {
+  try { process.stdout.write(JSON.stringify(groundArchitecture(target, opts.query), null, 2) + '\n'); } catch (err) { process.stderr.write(`nim: ${(err as Error).message}\n`); process.exitCode = 1; }
+});
+architectCmd.command('sketch').argument('<spec>').action(async (spec: string) => {
+  try { process.stdout.write(JSON.stringify(await sketchArchitecture(spec), null, 2) + '\n'); } catch (err) { process.stderr.write(`nim: ${(err as Error).message}\n`); process.exitCode = 1; }
+});
+architectCmd.command('score').argument('<paths...>').action((paths: string[]) => {
+  try { process.stdout.write(JSON.stringify(paths.map((path) => scoreModuleDepth(ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true))), null, 2) + '\n'); } catch (err) { process.stderr.write(`nim: ${(err as Error).message}\n`); process.exitCode = 1; }
+});
+architectCmd.command('audit').argument('<paths...>').action((paths: string[]) => {
+  try { process.stdout.write(JSON.stringify(paths.flatMap((path) => auditRedFlags(ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true))), null, 2) + '\n'); } catch (err) { process.stderr.write(`nim: ${(err as Error).message}\n`); process.exitCode = 1; }
+});
+architectCmd.command('decide').requiredOption('--file <path>', 'JSON decision payload').option('--dir <dir>', 'workspace directory', '.').action((opts: { file: string; dir: string }) => {
+  try { const decision = new DecisionLedger(resolve(opts.dir)).append(JSON.parse(readFileSync(opts.file, 'utf8'))); process.stdout.write(JSON.stringify(decision) + '\n'); } catch (err) { process.stderr.write(`nim: ${(err as Error).message}\n`); process.exitCode = 1; }
+});
+architectCmd.command('compile').requiredOption('--feature <id>', 'feature identifier').option('--dir <dir>', 'workspace directory', '.').action((opts: { feature: string; dir: string }) => {
+  try { process.stdout.write(JSON.stringify(compileArchitecture(resolve(opts.dir), opts.feature)) + '\n'); } catch (err) { process.stderr.write(`nim: ${(err as Error).message}\n`); process.exitCode = 1; }
+});
 
 program
   .command('run')

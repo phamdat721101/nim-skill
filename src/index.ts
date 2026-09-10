@@ -4,7 +4,7 @@
  * Each primitive is also exported standalone.
  */
 
-export const VERSION = '0.17.0';
+export const VERSION = '0.18.0';
 
 // Core
 export { runHarnessed, HarnessExecutionError } from './harness/runtime.js';
@@ -118,3 +118,21 @@ export type {
   GrillConfig,
   GrillHelper,
 } from './grill/types.js';
+
+// v0.18 — system architecture review and design
+export {
+  calculateCyclomatic,
+  scoreModuleDepth,
+  auditRedFlags,
+  groundArchitecture,
+  sketchArchitecture,
+  DecisionLedger,
+  DecisionRecordSchema,
+  compileArchitecture,
+  type ArchitectCritique,
+  type DecisionRecord,
+  type DesignSketch,
+  type GroundReport,
+  type ModuleDepthReport,
+  type RedFlagViolation,
+} from './architect/index.js';
