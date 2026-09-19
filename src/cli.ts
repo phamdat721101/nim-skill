@@ -43,7 +43,7 @@ import { appendHandoff, createFeatureBrief, initializeWorkspace } from './worksp
 import { deliveryBriefTemplate, runDeliveryCheck, format3LineHandover, generateThreatMatrix, parseSystemMap, systemMapPath, systemMapTemplate, verifySystemMap } from './deliver/index.js';
 import { createMemoryHelper, verifyKey } from './memory/index.js';
 import { createLogCompactHelper } from './logcompact/index.js';
-import { createSearchHelper } from './search/index.js';
+import { registerSearchCommands } from './search/cli.js';
 import { createCompactor, validateCompactionOutput } from './compact/index.js';
 import { createGlobalMemoryAuditor } from './globalmem/index.js';
 import { DEFAULT_HOOKS } from './hooks/default-profile.js';
@@ -174,19 +174,7 @@ program
     }
 });
 
-program
-  .command('search')
-  .argument('<query>', 'free-text recall query')
-  .requiredOption('--files <paths...>', 'memory, lesson, or archive files to search')
-  .option('--top-k <n>', 'maximum ranked results', '5')
-  .option('--min-score <n>', 'minimum BM25 score', '0')
-  .description('Search local memory-like Markdown/text files using deterministic BM25 ranking.')
-  .action((query: string, opts: { files: string[]; topK: string; minScore: string }) => {
-    try {
-      const results = createSearchHelper({}).searchFiles(query, opts.files, { topK: Number(opts.topK), minScore: Number(opts.minScore) });
-      process.stdout.write(results.map((result) => `${result.score.toFixed(4)}\t${result.sourcePath}\t${result.headerPath.join(' > ')}\n${result.text}`).join('\n\n') + (results.length ? '\n' : ''));
-    } catch (err) { process.stderr.write(`nim: ${(err as Error).message}\n`); process.exitCode = 1; }
-  });
+registerSearchCommands(program);
 
 const compactCmd = program.command('compact').description('Validate and write a separate, curated memory-distillation artifact.');
 compactCmd

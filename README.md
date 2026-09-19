@@ -363,7 +363,7 @@ workflow and verification commands.
 | `nim-propose` | Explicit pause, human approval, and owner-profile plan scaffolding. |
 | `nim-grill` | Structured design interrogation and enforcer-verified PRD compilation. |
 | `nim-deliver` | Product-owner delivery contract, rationale, environment readiness, and post-delivery proof. |
-| `nim-search` | Header-aware local BM25 recall over memory, lesson, and archive files. |
+| `nim-search` | Header-aware local BM25 recall over memory, lesson, and archive files, plus an additive AST-aware code/spec search surface (`search overview\|graph\|hydrate\|compile`). |
 | `nim-compact` | Strict candidate validation and separate distilled-memory artifacts; source logs remain immutable. |
 | `nim-globalmem` | Read-only hash audit for drift across declared local memory copies. |
 

@@ -25,7 +25,13 @@ export type VerifyStrategy =
   | { kind: 'result'; successPath: string; successValue: boolean; requiredPath?: string }
   | { kind: 'evidence'; claimField: string; evidenceField: string; forbiddenSource?: string }
   /** Static local environment contract check; never reads secret values. */
-  | { kind: 'envContract'; contract: string; configFiles?: string[]; root?: string };
+  | { kind: 'envContract'; contract: string; configFiles?: string[]; root?: string }
+  /**
+   * AS-SCP — compiles `output[specField ?? 'spec']` via `SpecCompiler` and
+   * fails unless every `dependencies[].symbol` resolves against
+   * `knownSymbols`. `workspaceRoot` defaults to `process.cwd()`.
+   */
+  | { kind: 'spec-envelope'; knownSymbols: string[]; workspaceRoot?: string; specField?: string };
 
 /** Bare strategy names usable as config shorthand (param-less ones only). */
 export type VerifyStrategyName = VerifyStrategy['kind'];

@@ -15,6 +15,7 @@
 import { spawnSync } from 'node:child_process';
 import type { VerifyStrategy, CheckResult, VerifyResult, EnforceMode } from '../harness/types.js';
 import { checkEnvironmentContract } from '../deliver/index.js';
+import { SpecCompiler, type SpecEnvelope } from '../search/compiler.js';
 
 type ReExecute = (feedback: string) => Promise<Record<string, unknown>> | Record<string, unknown>;
 
@@ -107,6 +108,20 @@ function runStrategy(
     case 'envContract': {
       const result = checkEnvironmentContract(s.root ?? process.cwd(), s.contract, s.configFiles);
       return { ...result, strategy: `envContract(${s.contract})` };
+    }
+    case 'spec-envelope': {
+      const specField = s.specField ?? 'spec';
+      const spec = get(output, specField);
+      if (!spec || typeof spec !== 'object') {
+        return { strategy: `spec-envelope(${specField})`, pass: false, reason: `missing spec envelope at '${specField}'` };
+      }
+      const compiler = new SpecCompiler(s.workspaceRoot ?? process.cwd());
+      const compiled = compiler.compile(spec as SpecEnvelope, new Set(s.knownSymbols));
+      return {
+        strategy: `spec-envelope(${specField})`,
+        pass: compiled.valid,
+        reason: compiled.valid ? undefined : `spec envelope references unknown symbols: ${compiled.missingSymbols.join(', ')}`,
+      };
     }
     case 'math': {
       const items = get(output, s.itemsField);

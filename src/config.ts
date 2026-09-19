@@ -37,6 +37,7 @@ import type {
 import type { DeliveryConfig } from './deliver/index.js';
 import type { GlobalMemoryDeclaration } from './globalmem/types.js';
 import type { HooksConfig } from './hooks/types.js';
+import type { ResolvedGraphSourcesConfig } from './search/graph-sources/config-types.js';
 import { DEFAULT_HOOKS } from './hooks/default-profile.js';
 
 // ─── Zod schemas ─────────────────────────────────────────────────────────
@@ -57,6 +58,7 @@ const verifyStrategySchema: z.ZodType<VerifyStrategy> = z.union([
   z.object({ kind: z.literal('result'), successPath: z.string().min(1), successValue: z.boolean(), requiredPath: z.string().min(1).optional() }),
   z.object({ kind: z.literal('evidence'), claimField: z.string().min(1), evidenceField: z.string().min(1), forbiddenSource: z.string().min(1).optional() }),
   z.object({ kind: z.literal('envContract'), contract: z.string().min(1), configFiles: z.array(z.string().min(1)).optional(), root: z.string().min(1).optional() }),
+  z.object({ kind: z.literal('spec-envelope'), knownSymbols: z.array(z.string()), workspaceRoot: z.string().min(1).optional(), specField: z.string().min(1).optional() }),
 ]);
 
 const strategyName = z.enum(['nonempty', 'json', 'schema', 'math', 'test', 'lint', 'command', 'result']);
@@ -180,6 +182,29 @@ const logCompactSchema = z.object({
 
 const compactSchema = z.object({ outputSuffix: z.string().optional(), maxInvariants: z.number().int().positive().optional() });
 const searchSchema = z.object({ topK: z.number().int().positive().optional(), minScore: z.number().nonnegative().optional() });
+
+/**
+ * AS-SCP context-graph ingestion sources — a sibling top-level nim.json key
+ * (`harness.search.graph`), resolved independently via
+ * `resolveSearchGraphConfig()` rather than folded into `resolveSearch()`/
+ * `ResolvedSearchConfig` (src/search/types.ts's `SearchConfig` stays
+ * byte-unmutated per the ground truth constraint). Every credential field is
+ * an env-var NAME string, never a secret literal — the real secret is read
+ * from `process.env[...]` only at ingest() call time inside each source.
+ */
+const gitGraphSourceSchema = z.object({ enabled: z.boolean().optional() });
+const jiraGraphSourceSchema = z.object({ enabled: z.boolean().optional(), baseUrlEnv: z.string().min(1).optional(), tokenEnv: z.string().min(1).optional() });
+const slackGraphSourceSchema = z.object({ enabled: z.boolean().optional(), baseUrlEnv: z.string().min(1).optional(), tokenEnv: z.string().min(1).optional() });
+const githubGraphSourceSchema = z.object({ enabled: z.boolean().optional(), baseUrlEnv: z.string().min(1).optional(), tokenEnv: z.string().min(1).optional() });
+const mcpGraphSourceSchema = z.object({ enabled: z.boolean().optional(), serverName: z.string().min(1).nullable().optional() });
+
+const searchGraphSchema = z.object({
+  git: gitGraphSourceSchema.optional(),
+  jira: jiraGraphSourceSchema.optional(),
+  slack: slackGraphSourceSchema.optional(),
+  github: githubGraphSourceSchema.optional(),
+  mcp: mcpGraphSourceSchema.optional(),
+});
 
 /**
  * `grill` is NESTED inside `harnessSchema` (same category/reasoning as
@@ -656,6 +681,39 @@ function resolveLogCompact(c: LogCompactConfig): ResolvedLogCompact {
 
 function resolveCompact(c: CompactConfig): ResolvedCompactConfig { return { outputSuffix: c.outputSuffix ?? '.distilled.md', maxInvariants: c.maxInvariants ?? 10 }; }
 function resolveSearch(c: SearchConfig): ResolvedSearchConfig { return { topK: c.topK ?? 5, minScore: c.minScore ?? 0 }; }
+
+/**
+ * Resolve `harness.search.graph` — independent of `resolveSearch()`/
+ * `ResolvedSearchConfig` per the ground-truth "do not mutate SearchConfig"
+ * constraint. `git.enabled` defaults true (git history is always locally
+ * available and safe to read); jira/slack/github/mcp all default disabled
+ * with documented env-var NAME fields (never secret literals).
+ */
+export function resolveSearchGraphConfig(input: unknown = {}): ResolvedGraphSourcesConfig {
+  const parsed = searchGraphSchema.parse(input ?? {});
+  return {
+    git: { enabled: parsed.git?.enabled ?? true },
+    jira: {
+      enabled: parsed.jira?.enabled ?? false,
+      baseUrlEnv: parsed.jira?.baseUrlEnv ?? 'NIM_SEARCH_JIRA_BASE_URL',
+      tokenEnv: parsed.jira?.tokenEnv ?? 'NIM_SEARCH_JIRA_TOKEN',
+    },
+    slack: {
+      enabled: parsed.slack?.enabled ?? false,
+      baseUrlEnv: parsed.slack?.baseUrlEnv ?? 'NIM_SEARCH_SLACK_BASE_URL',
+      tokenEnv: parsed.slack?.tokenEnv ?? 'NIM_SEARCH_SLACK_TOKEN',
+    },
+    github: {
+      enabled: parsed.github?.enabled ?? false,
+      baseUrlEnv: parsed.github?.baseUrlEnv ?? 'NIM_SEARCH_GITHUB_BASE_URL',
+      tokenEnv: parsed.github?.tokenEnv ?? 'NIM_SEARCH_GITHUB_TOKEN',
+    },
+    mcp: {
+      enabled: parsed.mcp?.enabled ?? false,
+      serverName: parsed.mcp?.serverName ?? null,
+    },
+  };
+}
 
 function resolveGrillConfig(c: GrillConfig): ResolvedGrillConfig {
   return {

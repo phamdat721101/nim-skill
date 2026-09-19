@@ -4,6 +4,31 @@ export function tokenize(text: string): string[] {
   return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 
+/**
+ * Identifier-aware tokenizer, additive to `tokenize()` (which stays
+ * unchanged for chunk.ts/index.ts callers). Splits camelCase, PascalCase,
+ * and snake_case/SCREAMING_SNAKE_CASE identifiers into lowercase
+ * sub-tokens, on top of plain Unicode word splitting — so a query like
+ * "user name" can match a symbol like `getUserName`.
+ */
+export function tokenizeIdentifier(text: string): string[] {
+  const words = text.match(/[\p{L}\p{N}]+/gu) ?? [];
+  const out: string[] = [];
+  for (const word of words) {
+    // Insert boundaries: lower→Upper (camel/Pascal humps), Upper+Upper→Upper+lower
+    // (acronym followed by a new word), letter<->digit, and underscores.
+    const withBoundaries = word
+      .replace(/([\p{Ll}\p{N}])([\p{Lu}])/gu, '$1_$2')
+      .replace(/([\p{Lu}]+)([\p{Lu}][\p{Ll}])/gu, '$1_$2')
+      .replace(/([\p{L}])([\p{N}])/gu, '$1_$2')
+      .replace(/([\p{N}])([\p{L}])/gu, '$1_$2');
+    for (const part of withBoundaries.split('_')) {
+      if (part) out.push(part.toLowerCase());
+    }
+  }
+  return out;
+}
+
 export function buildCorpusStats(docs: string[][]): CorpusStats {
   const documentFrequency = new Map<string, number>();
   for (const doc of docs) {

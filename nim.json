@@ -1,0 +1,17 @@
+{
+  "workspace": {
+    "deliver": {
+      "mode": "strict",
+      "briefDir": "docs/features",
+      "requireWorkrule": false,
+      "profiles": {
+        "qa": {
+          "contract": ".nim/deliver/qa-contract.json",
+          "configFiles": [],
+          "commands": ["npx vitest run tests/search-benchmark.test.ts"],
+          "evidenceFile": ".nim/deliver/qa-evidence.json"
+        }
+      }
+    }
+  }
+}

@@ -32,6 +32,7 @@
     "test:e2e": "vitest run tests/e2e",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "smoke:search": "tsx scripts/smoke-search-as-scp-e2e.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
     "prepare": "tsc -p tsconfig.json"
   },
